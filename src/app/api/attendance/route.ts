@@ -80,9 +80,9 @@ export async function GET(req: Request) {
         }));
 
         return NextResponse.json({ data: formattedRecords }, { status: 200 });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Attendance Fetch Error:', error);
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+        return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
     }
 }
 
