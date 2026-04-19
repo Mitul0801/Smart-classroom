@@ -3,8 +3,9 @@ import { getSession } from '@/lib/auth';
 import * as pdfParseModule from 'pdf-parse';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const pdfParse: any = (pdfParseModule as any).default || pdfParseModule;
-import { prisma } from '@/lib/prisma';
-import { put } from '@vercel/blob';
+import { db, storage } from '@/lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 export async function POST(req: Request) {
     try {
@@ -27,24 +28,29 @@ export async function POST(req: Request) {
         const parsed = await pdfParse(buffer);
         const textContent = parsed.text;
 
-        // Upload to Vercel Blob
-        const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-        const blob = await put(fileName, file, {
-            access: 'public',
+        // Upload to Firebase Storage
+        const fileName = `pdfs/${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
+        const storageRef = ref(storage, fileName);
+        
+        await uploadBytes(storageRef, buffer, {
+            contentType: 'application/pdf',
+        });
+        
+        const fileUrl = await getDownloadURL(storageRef);
+
+        // Create PDF record in Firestore
+        const pdfRef = await addDoc(collection(db, 'pdfs'), {
+            teacherId: session.userId,
+            fileUrl,
+            summary: textContent.slice(0, 1000),
+            createdAt: serverTimestamp()
         });
 
-        const fileUrl = blob.url;
-
-        // Create PDF record
-        const pdf = await prisma.pdf.create({
-            data: {
-                teacherId: session.userId,
-                fileUrl,
-                summary: textContent.slice(0, 1000) 
-            }
-        });
-
-        return NextResponse.json({ success: true, data: pdf, extractedText: textContent }, { status: 201 });
+        return NextResponse.json({ 
+            success: true, 
+            data: { id: pdfRef.id, fileUrl }, 
+            extractedText: textContent 
+        }, { status: 201 });
     } catch (error) {
         console.error('PDF Upload Error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

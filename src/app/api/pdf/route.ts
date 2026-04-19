@@ -1,19 +1,26 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 import { getSession } from '@/lib/auth';
+import { db } from '@/lib/firebase';
+import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 
 export async function GET() {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-        const pdfs = await prisma.pdf.findMany({
-            include: { teacher: { select: { name: true } } },
-            orderBy: { createdAt: 'desc' }
-        });
+        const pdfsRef = collection(db, 'pdfs');
+        const q = query(pdfsRef, orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(q);
+        
+        const pdfs = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate?.() || doc.data().createdAt
+        }));
 
         return NextResponse.json({ data: pdfs }, { status: 200 });
-    } catch {
+    } catch (error) {
+        console.error('PDF Fetch Error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }

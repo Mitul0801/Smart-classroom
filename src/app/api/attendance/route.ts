@@ -1,6 +1,18 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 import { getSession } from '@/lib/auth';
+import { db } from '@/lib/firebase';
+import { 
+    collection, 
+    query, 
+    where, 
+    getDocs, 
+    addDoc, 
+    orderBy, 
+    Timestamp,
+    doc,
+    getDoc,
+    limit
+} from 'firebase/firestore';
 
 export async function GET(req: Request) {
     try {
@@ -10,31 +22,54 @@ export async function GET(req: Request) {
         const url = new URL(req.url);
         const filterDate = url.searchParams.get('date');
 
-        let records;
+        let records: any[] = [];
+        const attendanceRef = collection(db, 'attendance');
+
         if (session.role === 'TEACHER') {
-            const query: Record<string, unknown> = {};
+            let q;
             if (filterDate) {
                 const startOfDay = new Date(filterDate);
                 startOfDay.setHours(0, 0, 0, 0);
                 const endOfDay = new Date(filterDate);
                 endOfDay.setHours(23, 59, 59, 999);
-                query.date = { gte: startOfDay, lte: endOfDay };
+                
+                q = query(
+                    attendanceRef,
+                    where('date', '>=', Timestamp.fromDate(startOfDay)),
+                    where('date', '<=', Timestamp.fromDate(endOfDay)),
+                    orderBy('date', 'desc')
+                );
+            } else {
+                q = query(attendanceRef, orderBy('date', 'desc'), limit(100));
             }
-            records = await prisma.attendance.findMany({
-                where: query,
-                include: { student: { select: { name: true, email: true } } },
-                orderBy: { date: 'desc' }
-            });
+            
+            const snapshot = await getDocs(q);
+            records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            // In Firestore, there is no easy "include" for relationships.
+            // We check if student info is already denormalized or fetch it.
+            // For now, assume it's denormalized during creation for speed.
         } else {
             // Student gets their own records
-            records = await prisma.attendance.findMany({
-                where: { studentId: session.userId },
-                orderBy: { date: 'desc' }
-            });
+            const q = query(
+                attendanceRef, 
+                where('studentId', '==', session.userId),
+                orderBy('date', 'desc')
+            );
+            const snapshot = await getDocs(q);
+            records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         }
 
-        return NextResponse.json({ data: records }, { status: 200 });
-    } catch {
+        // Convert Firestore Timestamps to plain dates for the frontend
+        const formattedRecords = records.map(r => ({
+            ...r,
+            date: r.date?.toDate?.() || r.date,
+            createdAt: r.createdAt?.toDate?.() || r.createdAt,
+        }));
+
+        return NextResponse.json({ data: formattedRecords }, { status: 200 });
+    } catch (error) {
+        console.error('Attendance Fetch Error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }
@@ -47,6 +82,7 @@ export async function POST(req: Request) {
         }
 
         const { status } = await req.json();
+        const attendanceRef = collection(db, 'attendance');
         
         // Prevent multiple entries per day
         const startOfDay = new Date();
@@ -54,27 +90,37 @@ export async function POST(req: Request) {
         const endOfDay = new Date();
         endOfDay.setHours(23, 59, 59, 999);
 
-        const existing = await prisma.attendance.findFirst({
-            where: {
-                studentId: session.userId,
-                date: { gte: startOfDay, lte: endOfDay }
-            }
-        });
+        const q = query(
+            attendanceRef,
+            where('studentId', '==', session.userId),
+            where('date', '>=', Timestamp.fromDate(startOfDay)),
+            where('date', '<=', Timestamp.fromDate(endOfDay))
+        );
 
-        if (existing) {
+        const existing = await getDocs(q);
+        if (!existing.empty) {
             return NextResponse.json({ error: 'Attendance already marked today' }, { status: 400 });
         }
 
-        const record = await prisma.attendance.create({
-            data: {
-                studentId: session.userId,
-                status: status === 'PRESENT' ? 'PRESENT' : 'ABSENT',
-                date: new Date()
+        // Fetch student name to denormalize for teacher view
+        const studentDoc = await getDoc(doc(db, 'users', session.userId));
+        const studentData = studentDoc.exists() ? studentDoc.data() : { name: 'Unknown Student' };
+
+        const record = await addDoc(attendanceRef, {
+            studentId: session.userId,
+            studentStatus: status === 'PRESENT' ? 'PRESENT' : 'ABSENT', // Status is a keyword in Firestore sometimes
+            status: status === 'PRESENT' ? 'PRESENT' : 'ABSENT',
+            date: Timestamp.now(),
+            createdAt: Timestamp.now(),
+            student: {
+                name: studentData.name,
+                email: studentData.email
             }
         });
 
-        return NextResponse.json({ success: true, data: record }, { status: 201 });
-    } catch {
+        return NextResponse.json({ success: true, id: record.id }, { status: 201 });
+    } catch (error) {
+        console.error('Attendance Save Error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }

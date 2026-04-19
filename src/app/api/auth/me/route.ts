@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 export async function GET() {
     try {
@@ -9,17 +10,17 @@ export async function GET() {
             return NextResponse.json({ authenticated: false }, { status: 401 });
         }
 
-        const user = await prisma.user.findUnique({
-            where: { id: session.userId },
-            select: { id: true, name: true, email: true, role: true }
-        });
+        const userDoc = await getDoc(doc(db, 'users', session.userId));
 
-        if (!user) {
+        if (!userDoc.exists()) {
             return NextResponse.json({ authenticated: false }, { status: 401 });
         }
 
-        return NextResponse.json({ authenticated: true, user }, { status: 200 });
-    } catch {
+        const userData = { id: userDoc.id, ...userDoc.data() };
+
+        return NextResponse.json({ authenticated: true, user: userData }, { status: 200 });
+    } catch (error) {
+        console.error('Me Fetch Error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }

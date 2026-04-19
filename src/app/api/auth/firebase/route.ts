@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 import { setCookieSession } from '@/lib/auth';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 
 const JWKS = createRemoteJWKSet(new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'));
 
@@ -26,29 +27,35 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Invalid token payload' }, { status: 400 });
         }
 
-        let user = await prisma.user.findUnique({ where: { email } });
+        // Find user in Firestore
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('email', '==', email));
+        const querySnapshot = await getDocs(q);
 
-        if (!user) {
-            // New user - create them
-            // If they didn't provide a role (requestedRole), we default to STUDENT
+        let userData: { id: string, role: string, [key: string]: any };
+        if (querySnapshot.empty) {
+            // New user - create in Firestore
             const role = requestedRole === 'TEACHER' ? 'TEACHER' : 'STUDENT';
-            
-            user = await prisma.user.create({
-                data: {
-                    name,
-                    email,
-                    password: 'firebase-authenticated', // Placeholder
-                    role,
-                },
-            });
+            const newUser = {
+                name,
+                email,
+                role,
+                createdAt: serverTimestamp(),
+            };
+            const docRef = await addDoc(usersRef, newUser);
+            userData = { id: docRef.id, ...newUser };
+        } else {
+            // Existing user
+            const doc = querySnapshot.docs[0];
+            userData = { id: doc.id, ...(doc.data() as { role: string, [key: string]: any }) };
         }
 
-        // Set the session cookie using our existing auth logic
-        await setCookieSession(user.id, user.role);
+        // Set the session cookie
+        await setCookieSession(userData.id, userData.role as string);
 
-        return NextResponse.json({ success: true, user: { id: user.id, email: user.email, role: user.role } });
-    } catch (error) {
+        return NextResponse.json({ success: true, user: userData });
+    } catch (error: any) {
         console.error('Firebase Auth Error:', error);
-        return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
+        return NextResponse.json({ error: error.message || 'Authentication failed' }, { status: 401 });
     }
 }

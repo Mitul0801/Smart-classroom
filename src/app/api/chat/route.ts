@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
-
+import { db } from '@/lib/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
@@ -41,16 +41,21 @@ export async function POST(req: Request) {
         const data = await response.json();
         const aiMessage = data.choices[0].message;
 
-        // Store chat history in DB
-        await prisma.chatHistory.create({
-            data: {
+        // Store chat history in Firestore
+        try {
+            await addDoc(collection(db, 'chatHistory'), {
                 userId: session.userId,
-                messages: JSON.stringify([...messagesForAI, aiMessage])
-            }
-        });
+                messages: JSON.stringify([...messagesForAI, aiMessage]),
+                createdAt: serverTimestamp()
+            });
+        } catch (dbError) {
+            console.error('Error saving chat history:', dbError);
+            // Non-critical, we can still return the AI reply
+        }
 
         return NextResponse.json({ reply: aiMessage }, { status: 200 });
-    } catch {
+    } catch (error) {
+        console.error('Chat Error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }
