@@ -4,8 +4,7 @@ import * as pdfParseModule from 'pdf-parse';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const pdfParse: any = (pdfParseModule as any).default || pdfParseModule;
 import { prisma } from '@/lib/prisma';
-import fs from 'fs/promises';
-import path from 'path';
+import { put } from '@vercel/blob';
 
 export async function POST(req: Request) {
     try {
@@ -28,28 +27,22 @@ export async function POST(req: Request) {
         const parsed = await pdfParse(buffer);
         const textContent = parsed.text;
 
-        // In a real production app, upload the file to S3/Supabase.
-        // For development, we'll write to public/uploads directory
-        const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-        await fs.mkdir(uploadsDir, { recursive: true });
-        
+        // Upload to Vercel Blob
         const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-        const filePath = path.join(uploadsDir, fileName);
-        await fs.writeFile(filePath, buffer);
+        const blob = await put(fileName, file, {
+            access: 'public',
+        });
 
-        const fileUrl = `/uploads/${fileName}`;
+        const fileUrl = blob.url;
 
         // Create PDF record
         const pdf = await prisma.pdf.create({
             data: {
                 teacherId: session.userId,
                 fileUrl,
-                summary: textContent.slice(0, 1000) // Temporary just a slice, we can use summarize API in a separate chain
+                summary: textContent.slice(0, 1000) 
             }
         });
-
-        // Try hitting internal summarize API or return text for frontend to hit it
-        // To keep it clean, we return the parsed text so the frontend can display it or ask for a summary.
 
         return NextResponse.json({ success: true, data: pdf, extractedText: textContent }, { status: 201 });
     } catch (error) {
