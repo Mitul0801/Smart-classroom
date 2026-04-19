@@ -53,11 +53,29 @@ export default function StudentNotes() {
                                             <ReactMarkdown>{note.content}</ReactMarkdown>
                                         </div>
                                     )}
-                                    {note.fileUrl && (
-                                        <a href={note.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 mt-4 text-indigo-400 hover:text-indigo-300 text-sm font-medium">
-                                            <DownloadCloud className="w-4 h-4" /> Download Attachment
-                                        </a>
-                                    )}
+                                    <div className="flex gap-2 mt-4">
+                                        {note.fileUrl && (
+                                            <a href={note.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 text-sm font-medium">
+                                                <DownloadCloud className="w-4 h-4" /> Download
+                                            </a>
+                                        )}
+                                        <button 
+                                            onClick={async () => {
+                                                const res = await fetch('/api/summarize', {
+                                                    method: 'POST',
+                                                    body: JSON.stringify({ text: note.content, type: 'summarize' }),
+                                                    headers: { 'Content-Type': 'application/json' }
+                                                });
+                                                const data = await res.json();
+                                                if (res.ok) {
+                                                    alert("AI Summary:\n\n" + data.result);
+                                                }
+                                            }}
+                                            className="text-violet-400 hover:text-violet-300 text-sm font-medium flex items-center gap-2"
+                                        >
+                                            <BookOpen className="w-4 h-4" /> Summarize
+                                        </button>
+                                    </div>
                                 </CardContent>
                             </Card>
                         ))}
@@ -74,7 +92,7 @@ export default function StudentNotes() {
                                 <CardContent className="p-4 flex items-center justify-between">
                                     <div>
                                         <p className="font-semibold text-zinc-100 mb-1 flex items-center gap-2">
-                                            <FileText className="w-4 h-4 text-rose-400" /> Document Document
+                                            <FileText className="w-4 h-4 text-rose-400" /> {pdf.fileUrl.split('/').pop()?.split('-').slice(1).join('-') || 'Document'}
                                         </p>
                                         <p className="text-xs text-zinc-400">By {pdf.teacher.name} • {new Date(pdf.createdAt).toLocaleDateString()}</p>
                                     </div>

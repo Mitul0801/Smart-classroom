@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
@@ -28,7 +29,7 @@ export async function POST(req: Request) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: 'openai/gpt-oss-20b:free',
+                model: 'meta-llama/llama-3.3-70b-instruct:free',
                 messages: messagesForAI,
             })
         });
@@ -40,8 +41,13 @@ export async function POST(req: Request) {
         const data = await response.json();
         const aiMessage = data.choices[0].message;
 
-        // Optionally store chat history in DB here
-        // ... omitted for simplicity, but could be added mapping to ChatHistory table
+        // Store chat history in DB
+        await prisma.chatHistory.create({
+            data: {
+                userId: session.userId,
+                messages: JSON.stringify([...messagesForAI, aiMessage])
+            }
+        });
 
         return NextResponse.json({ reply: aiMessage }, { status: 200 });
     } catch {

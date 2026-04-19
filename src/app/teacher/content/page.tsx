@@ -33,10 +33,13 @@ export default function TeacherContentPage() {
 
     async function handleUploadPdf(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
-        setLoadingPdf(true);
-        
         const fileInput = e.currentTarget.elements.namedItem('file') as HTMLInputElement;
-        if (!fileInput.files || fileInput.files.length === 0) return;
+        if (!fileInput.files || fileInput.files.length === 0) {
+            toast.error("Please select a file first");
+            return;
+        }
+
+        setLoadingPdf(true);
 
         const formData = new FormData();
         formData.append('file', fileInput.files[0]);

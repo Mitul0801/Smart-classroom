@@ -16,8 +16,12 @@ export default function StudentDashboard() {
 
     useEffect(() => {
         fetch('/api/attendance')
-            .then(res => res.json())
-            .then(res => setAttHistory(res.data || []));
+            .then(res => {
+                if (!res.ok) throw new Error("Failed to fetch history");
+                return res.json();
+            })
+            .then(res => setAttHistory(res.data || []))
+            .catch(() => toast.error("Could not load attendance history"));
     }, []);
 
     async function markAttendance() {

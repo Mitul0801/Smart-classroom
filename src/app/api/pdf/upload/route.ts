@@ -33,7 +33,7 @@ export async function POST(req: Request) {
         const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
         await fs.mkdir(uploadsDir, { recursive: true });
         
-        const fileName = `${Date.now()}-${file.name.replace(/\\s+/g, '-')}`;
+        const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
         const filePath = path.join(uploadsDir, fileName);
         await fs.writeFile(filePath, buffer);
 
