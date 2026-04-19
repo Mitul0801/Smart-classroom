@@ -36,15 +36,21 @@ export async function GET(req: Request) {
                 q = query(
                     attendanceRef,
                     where('date', '>=', Timestamp.fromDate(startOfDay)),
-                    where('date', '<=', Timestamp.fromDate(endOfDay)),
-                    orderBy('date', 'desc')
+                    where('date', '<=', Timestamp.fromDate(endOfDay))
                 );
             } else {
-                q = query(attendanceRef, orderBy('date', 'desc'), limit(100));
+                q = query(attendanceRef, limit(100));
             }
             
             const snapshot = await getDocs(q);
             records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            // Sort in memory to avoid index requirements
+            records.sort((a, b) => {
+                const dateA = a.date?.toDate?.() || new Date(0);
+                const dateB = b.date?.toDate?.() || new Date(0);
+                return dateB.getTime() - dateA.getTime();
+            });
             
             // In Firestore, there is no easy "include" for relationships.
             // We check if student info is already denormalized or fetch it.
@@ -53,11 +59,17 @@ export async function GET(req: Request) {
             // Student gets their own records
             const q = query(
                 attendanceRef, 
-                where('studentId', '==', session.userId),
-                orderBy('date', 'desc')
+                where('studentId', '==', session.userId)
             );
             const snapshot = await getDocs(q);
             records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            // Sort in memory to avoid needing a composite index
+            records.sort((a, b) => {
+                const dateA = a.date?.toDate?.() || new Date(0);
+                const dateB = b.date?.toDate?.() || new Date(0);
+                return dateB.getTime() - dateA.getTime();
+            });
         }
 
         // Convert Firestore Timestamps to plain dates for the frontend

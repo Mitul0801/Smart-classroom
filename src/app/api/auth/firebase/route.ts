@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { setCookieSession } from '@/lib/auth';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 
 const JWKS = createRemoteJWKSet(new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'));
 
@@ -32,10 +32,12 @@ export async function POST(req: Request) {
         const q = query(usersRef, where('email', '==', email));
         const querySnapshot = await getDocs(q);
 
+        // Update user data and role on every login to match the current selection
+        const role = requestedRole === 'TEACHER' ? 'TEACHER' : 'STUDENT';
+        
         let userData: { id: string, role: string, [key: string]: any };
         if (querySnapshot.empty) {
-            // New user - create in Firestore
-            const role = requestedRole === 'TEACHER' ? 'TEACHER' : 'STUDENT';
+            // New user - create
             const newUser = {
                 name,
                 email,
@@ -45,9 +47,16 @@ export async function POST(req: Request) {
             const docRef = await addDoc(usersRef, newUser);
             userData = { id: docRef.id, ...newUser };
         } else {
-            // Existing user
-            const doc = querySnapshot.docs[0];
-            userData = { id: doc.id, ...(doc.data() as { role: string, [key: string]: any }) };
+            // Existing user - Update role if it changed
+            const userDoc = querySnapshot.docs[0];
+            const currentData = userDoc.data();
+            
+            if (currentData.role !== role) {
+                const userRef = doc(db, 'users', userDoc.id);
+                await updateDoc(userRef, { role });
+            }
+            
+            userData = { id: userDoc.id, ...currentData, role };
         }
 
         // Set the session cookie

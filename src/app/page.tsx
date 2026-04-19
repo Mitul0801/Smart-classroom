@@ -46,7 +46,7 @@ export default function Home() {
           with AI-powered summarizations and intelligent chat assistants.
         </p>
         <div className="flex flex-col sm:flex-row items-center gap-4">
-          <Link href="/register">
+          <Link href="/login">
              <Button size="lg" className="h-14 px-8 text-lg bg-white text-zinc-950 hover:bg-zinc-200 shadow-[0_0_40px_-10px_rgba(255,255,255,0.3)] transition-all hover:scale-105 rounded-2xl">
                Get Started for Free
              </Button>

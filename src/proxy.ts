@@ -11,6 +11,11 @@ export async function proxy(req: NextRequest) {
     // Check if the route is protected
     const isStudentRoute = pathname.startsWith('/student');
     const isTeacherRoute = pathname.startsWith('/teacher');
+    const isRegisterRoute = pathname === '/register';
+
+    if (isRegisterRoute) {
+        return NextResponse.redirect(new URL('/login', req.url));
+    }
 
     if (isStudentRoute || isTeacherRoute) {
         const session = req.cookies.get('session')?.value;
