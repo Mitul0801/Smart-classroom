@@ -2,74 +2,87 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import Link from 'next/link';
 import { BrainCircuit } from 'lucide-react';
+import { signInWithPopup } from 'firebase/auth';
+import { auth, googleProvider } from '@/lib/firebase';
 
 export default function LoginPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
+    const [role, setRole] = useState<'STUDENT' | 'TEACHER'>('STUDENT');
 
-    async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-        e.preventDefault();
+    async function onGoogleLogin() {
         setLoading(true);
-        const formData = new FormData(e.currentTarget);
-        const email = formData.get('email');
-        const password = formData.get('password');
+        try {
+            const result = await signInWithPopup(auth, googleProvider);
+            const idToken = await result.user.getIdToken();
 
-        const res = await fetch('/api/auth/login', {
-            method: 'POST',
-            body: JSON.stringify({ email, password }),
-            headers: { 'Content-Type': 'application/json' }
-        });
+            const res = await fetch('/api/auth/firebase', {
+                method: 'POST',
+                body: JSON.stringify({ idToken, role }),
+                headers: { 'Content-Type': 'application/json' }
+            });
 
-        const data = await res.json();
-        setLoading(false);
-
-        if (res.ok) {
-            toast.success('Logged in successfully!');
-            router.push(data.role === 'TEACHER' ? '/teacher' : '/student');
-        } else {
-            toast.error(data.error || 'Login failed');
+            const data = await res.json();
+            
+            if (res.ok) {
+                toast.success('Logged in successfully!');
+                // Check the actual role from the DB response
+                router.push(data.user.role === 'TEACHER' ? '/teacher' : '/student');
+            } else {
+                toast.error(data.error || 'Login failed');
+            }
+        } catch (error) {
+            console.error(error);
+            toast.error('Google Sign-In failed');
+        } finally {
+            setLoading(false);
         }
     }
 
     return (
-        <Card className="bg-zinc-900/40 border-zinc-800/50 backdrop-blur-xl shadow-2xl">
+        <Card className="bg-zinc-900/40 border-zinc-800/50 backdrop-blur-xl shadow-2xl w-full max-w-md mx-auto">
             <CardHeader className="space-y-3 pb-6">
                 <div className="flex justify-center mb-2">
                     <div className="w-12 h-12 rounded-xl bg-indigo-500/10 flex items-center justify-center">
                         <BrainCircuit className="w-6 h-6 text-indigo-400" />
                     </div>
                 </div>
-                <CardTitle className="text-2xl font-bold text-center text-zinc-50">Welcome Back</CardTitle>
+                <CardTitle className="text-2xl font-bold text-center text-zinc-50">Smart Classroom AI</CardTitle>
                 <CardDescription className="text-center text-zinc-400">
-                    Sign in to your account
+                    Sign in with your Google account to get started
                 </CardDescription>
             </CardHeader>
-            <CardContent>
-                <form onSubmit={onSubmit} className="space-y-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="email" className="text-zinc-300">Email address</Label>
-                        <Input id="email" name="email" type="email" required placeholder="you@example.com" className="bg-zinc-950/50 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-indigo-500/50 h-11" />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="password" className="text-zinc-300">Password</Label>
-                        <Input id="password" name="password" type="password" required className="bg-zinc-950/50 border-zinc-800 text-zinc-100 focus-visible:ring-indigo-500/50 h-11" />
-                    </div>
-                    <Button disabled={loading} type="submit" className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20 mt-2">
-                        {loading ? 'Signing in...' : 'Sign In'}
-                    </Button>
-                </form>
-                <div className="mt-6 text-center text-sm text-zinc-400">
-                    Don&apos;t have an account?{' '}
-                    <Link href="/register" className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">
-                        Sign up
-                    </Link>
+            <CardContent className="space-y-6">
+                <div className="flex p-1 bg-zinc-950/50 rounded-lg border border-zinc-800 relative z-10">
+                    <button 
+                        onClick={() => setRole('STUDENT')}
+                        className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${role === 'STUDENT' ? 'bg-indigo-600 text-white shadow-lg' : 'text-zinc-400 hover:text-zinc-200'}`}
+                    >
+                        Student
+                    </button>
+                    <button 
+                        onClick={() => setRole('TEACHER')}
+                        className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${role === 'TEACHER' ? 'bg-indigo-600 text-white shadow-lg' : 'text-zinc-400 hover:text-zinc-200'}`}
+                    >
+                        Teacher
+                    </button>
                 </div>
+
+                <Button 
+                    disabled={loading} 
+                    onClick={onGoogleLogin}
+                    className="w-full h-12 bg-white hover:bg-zinc-100 text-zinc-900 font-semibold shadow-lg transition-all flex items-center justify-center gap-3"
+                >
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+                    {loading ? 'Connecting...' : `Sign in as ${role === 'TEACHER' ? 'Teacher' : 'Student'}`}
+                </Button>
+
+                <p className="text-center text-xs text-zinc-500 px-4">
+                    By signing in, you agree to our Terms of Service and Privacy Policy.
+                </p>
             </CardContent>
         </Card>
     );

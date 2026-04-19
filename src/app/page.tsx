@@ -22,7 +22,7 @@ export default function Home() {
             <Link href="/login">
               <Button variant="ghost" className="text-zinc-300 hover:text-white">Login</Button>
             </Link>
-            <Link href="/register">
+            <Link href="/login">
               <Button className="bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20">Sign Up</Button>
             </Link>
           </div>
