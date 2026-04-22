@@ -14,14 +14,28 @@ interface AttendanceRecord {
 export default function StudentDashboard() {
     const [attHistory, setAttHistory] = useState<AttendanceRecord[]>([]);
 
+    async function fetchAttendanceHistory() {
+        const res = await fetch('/api/attendance');
+        // #region agent log
+        fetch('http://127.0.0.1:7481/ingest/a62793e9-faf6-4aa5-8fae-f241bfabcb8d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d74878'},body:JSON.stringify({sessionId:'d74878',runId:'baseline',hypothesisId:'H2',location:'src/app/student/page.tsx:21',message:'Attendance history response status',data:{ok:res.ok,status:res.status},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        if (!res.ok) throw new Error("Failed to fetch history");
+        const payload = await res.json();
+        return payload.data || [];
+    }
+
     useEffect(() => {
-        fetch('/api/attendance')
-            .then(res => {
-                if (!res.ok) throw new Error("Failed to fetch history");
-                return res.json();
+        let isActive = true;
+        fetchAttendanceHistory()
+            .then(history => {
+                if (isActive) {
+                    setAttHistory(history);
+                }
             })
-            .then(res => setAttHistory(res.data || []))
             .catch(() => toast.error("Could not load attendance history"));
+        return () => {
+            isActive = false;
+        };
     }, []);
 
     async function markAttendance() {
@@ -31,9 +45,13 @@ export default function StudentDashboard() {
             headers: { 'Content-Type': 'application/json' }
         });
         const data = await res.json();
+        // #region agent log
+        fetch('http://127.0.0.1:7481/ingest/a62793e9-faf6-4aa5-8fae-f241bfabcb8d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d74878'},body:JSON.stringify({sessionId:'d74878',runId:'baseline',hypothesisId:'H1',location:'src/app/student/page.tsx:35',message:'Attendance mark response payload shape',data:{ok:res.ok,status:res.status,hasData:Boolean(data?.data),keys:data?Object.keys(data):[]},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         if (res.ok) {
             toast.success("Attendance marked as requested!");
-            setAttHistory([data.data, ...attHistory]);
+            const history = await fetchAttendanceHistory();
+            setAttHistory(history);
         } else {
             toast.error(data.error || "Could not mark attendance");
         }

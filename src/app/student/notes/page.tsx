@@ -1,8 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BookOpen, FileText, Download, DownloadCloud } from 'lucide-react';
+import { BookOpen, FileText, Download, DownloadCloud, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface Note {
     id: string;
@@ -23,10 +25,36 @@ interface Pdf {
 export default function StudentNotes() {
     const [notes, setNotes] = useState<Note[]>([]);
     const [pdfs, setPdfs] = useState<Pdf[]>([]);
+    const [summaryState, setSummaryState] = useState<{ isOpen: boolean, content: string, title: string }>({ isOpen: false, content: '', title: '' });
+    const [loadingSummaryId, setLoadingSummaryId] = useState<string | null>(null);
 
     useEffect(() => {
-        fetch('/api/notes').then(res => res.json()).then(res => setNotes(res.data || []));
-        fetch('/api/pdf').then(res => res.json()).then(res => setPdfs(res.data || []));
+        fetch('/api/notes')
+            .then(async res => {
+                const payload = await res.json();
+                // #region agent log
+                fetch('http://127.0.0.1:7481/ingest/a62793e9-faf6-4aa5-8fae-f241bfabcb8d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d74878'},body:JSON.stringify({sessionId:'d74878',runId:'baseline',hypothesisId:'H2',location:'src/app/student/notes/page.tsx:32',message:'Notes endpoint result',data:{ok:res.ok,status:res.status,hasData:Array.isArray(payload?.data),error:payload?.error||null},timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
+                if (!res.ok) {
+                    toast.error(payload?.error || 'Failed to load notes');
+                    setNotes([]);
+                    return;
+                }
+                setNotes(payload.data || []);
+            });
+        fetch('/api/pdf')
+            .then(async res => {
+                const payload = await res.json();
+                // #region agent log
+                fetch('http://127.0.0.1:7481/ingest/a62793e9-faf6-4aa5-8fae-f241bfabcb8d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d74878'},body:JSON.stringify({sessionId:'d74878',runId:'baseline',hypothesisId:'H2',location:'src/app/student/notes/page.tsx:39',message:'PDF endpoint result',data:{ok:res.ok,status:res.status,hasData:Array.isArray(payload?.data),error:payload?.error||null},timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
+                if (!res.ok) {
+                    toast.error(payload?.error || 'Failed to load PDFs');
+                    setPdfs([]);
+                    return;
+                }
+                setPdfs(payload.data || []);
+            });
     }, []);
 
     return (
@@ -60,20 +88,31 @@ export default function StudentNotes() {
                                             </a>
                                         )}
                                         <button 
+                                            disabled={loadingSummaryId === note.id}
                                             onClick={async () => {
-                                                const res = await fetch('/api/summarize', {
-                                                    method: 'POST',
-                                                    body: JSON.stringify({ text: note.content, type: 'summarize' }),
-                                                    headers: { 'Content-Type': 'application/json' }
-                                                });
-                                                const data = await res.json();
-                                                if (res.ok) {
-                                                    alert("AI Summary:\n\n" + data.result);
+                                                setLoadingSummaryId(note.id);
+                                                try {
+                                                    const res = await fetch('/api/summarize', {
+                                                        method: 'POST',
+                                                        body: JSON.stringify({ text: note.content, type: 'summarize' }),
+                                                        headers: { 'Content-Type': 'application/json' }
+                                                    });
+                                                    const data = await res.json();
+                                                    if (res.ok) {
+                                                        setSummaryState({ isOpen: true, content: data.result, title: note.title });
+                                                    } else {
+                                                        toast.error("Failed to summarize");
+                                                    }
+                                                } catch (e) {
+                                                    toast.error("An error occurred");
+                                                } finally {
+                                                    setLoadingSummaryId(null);
                                                 }
                                             }}
-                                            className="text-violet-400 hover:text-violet-300 text-sm font-medium flex items-center gap-2"
+                                            className="text-violet-400 hover:text-violet-300 text-sm font-medium flex items-center gap-2 disabled:opacity-50"
                                         >
-                                            <BookOpen className="w-4 h-4" /> Summarize
+                                            {loadingSummaryId === note.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookOpen className="w-4 h-4" />}
+                                            {loadingSummaryId === note.id ? 'Summarizing...' : 'Summarize'}
                                         </button>
                                     </div>
                                 </CardContent>
@@ -105,6 +144,17 @@ export default function StudentNotes() {
                     </div>
                 </div>
             </div>
+
+            <Dialog open={summaryState.isOpen} onOpenChange={(open) => setSummaryState(prev => ({ ...prev, isOpen: open }))}>
+                <DialogContent className="max-w-2xl bg-zinc-950 border-zinc-800 text-zinc-100 max-h-[80vh] overflow-y-auto custom-scrollbar">
+                    <DialogHeader>
+                        <DialogTitle>AI Summary: {summaryState.title}</DialogTitle>
+                    </DialogHeader>
+                    <div className="prose prose-invert prose-sm text-zinc-300">
+                        <ReactMarkdown>{summaryState.content}</ReactMarkdown>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

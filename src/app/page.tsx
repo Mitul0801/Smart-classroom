@@ -1,7 +1,8 @@
-import Link from 'next/link';
+import { Navbar } from '@/components/navbar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { BookOpen, BrainCircuit, GraduationCap } from 'lucide-react';
+import Link from 'next/link';
 
 export default function Home() {
   return (
@@ -12,22 +13,7 @@ export default function Home() {
       <div className="absolute bottom-[-10%] right-[-10%] w-[40rem] h-[40rem] bg-violet-600/20 blur-[100px] rounded-full pointer-events-none" />
 
       {/* Navbar */}
-      <nav className="border-b border-zinc-800/50 bg-zinc-950/50 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-violet-400">
-            <BrainCircuit className="w-6 h-6 text-indigo-400" />
-            SmartClass AI
-          </div>
-          <div className="flex items-center gap-4">
-            <Link href="/login">
-              <Button variant="ghost" className="text-zinc-300 hover:text-white">Login</Button>
-            </Link>
-            <Link href="/login">
-              <Button className="bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20">Sign Up</Button>
-            </Link>
-          </div>
-        </div>
-      </nav>
+      <Navbar />
 
       {/* Hero Section */}
       <main className="flex-1 flex flex-col items-center justify-center px-6 py-24 text-center z-10">
@@ -38,7 +24,7 @@ export default function Home() {
         <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight max-w-4xl leading-tight mb-6">
           <span className="block text-white">Unlock the future of</span>
           <span className="block bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-primary to-violet-400">
-            Education with AI.
+            {' '}Education with AI.
           </span>
         </h1>
         <p className="text-lg md:text-xl text-zinc-400 max-w-2xl mb-10 leading-relaxed text-balance">
@@ -46,12 +32,12 @@ export default function Home() {
           with AI-powered summarizations and intelligent chat assistants.
         </p>
         <div className="flex flex-col sm:flex-row items-center gap-4">
-          <Link href="/login">
+          <Link href="/login?mode=signup">
              <Button size="lg" className="h-14 px-8 text-lg bg-white text-zinc-950 hover:bg-zinc-200 shadow-[0_0_40px_-10px_rgba(255,255,255,0.3)] transition-all hover:scale-105 rounded-2xl">
                Get Started for Free
              </Button>
           </Link>
-          <Link href="/login">
+          <Link href="/login?role=teacher">
              <Button size="lg" variant="outline" className="h-14 px-8 text-lg border-zinc-700 bg-zinc-900/50 hover:bg-zinc-800 text-zinc-300 transition-all rounded-2xl">
                Teacher Login
              </Button>

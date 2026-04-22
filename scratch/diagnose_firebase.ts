@@ -27,11 +27,12 @@ async function diagnose() {
         });
         console.log("✅ Success! Write permission confirmed.");
         
-    } catch (error: any) {
+    } catch (error: unknown) {
+        const err = error as { code?: string; message?: string };
         console.error("❌ Firebase Error detected:");
-        console.error(`Code: ${error.code}`);
-        console.error(`Message: ${error.message}`);
-        if (error.message.includes("index")) {
+        console.error(`Code: ${err.code ?? "unknown"}`);
+        console.error(`Message: ${err.message ?? "unknown"}`);
+        if ((err.message ?? "").includes("index")) {
             console.error("💡 Suggestion: You need to create a composite index. Check the link in the error above.");
         }
     }

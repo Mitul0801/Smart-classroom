@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { setCookieSession } from '@/lib/auth';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
-import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 
 const JWKS = createRemoteJWKSet(new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'));
 
@@ -14,57 +12,38 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Missing token' }, { status: 400 });
         }
 
+        const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+        if (!projectId) {
+            return NextResponse.json({ error: 'Firebase config missing' }, { status: 500 });
+        }
+
         // Verify the Firebase ID Token
         const { payload } = await jwtVerify(idToken, JWKS, {
-            issuer: 'https://securetoken.google.com/smart-classroom-3a3d1',
-            audience: 'smart-classroom-3a3d1',
+            issuer: `https://securetoken.google.com/${projectId}`,
+            audience: projectId,
         });
 
         const email = payload.email as string;
-        const name = (payload.name as string) || email.split('@')[0];
+        const uid = payload.sub as string;
+        const name = (payload.name as string) || email?.split('@')[0] || 'User';
+        const role = requestedRole === 'TEACHER' ? 'TEACHER' : 'STUDENT';
 
-        if (!email) {
+        if (!email || !uid) {
             return NextResponse.json({ error: 'Invalid token payload' }, { status: 400 });
         }
 
-        // Find user in Firestore
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef, where('email', '==', email));
-        const querySnapshot = await getDocs(q);
-
-        // Update user data and role on every login to match the current selection
-        const role = requestedRole === 'TEACHER' ? 'TEACHER' : 'STUDENT';
-        
-        let userData: { id: string, role: string, [key: string]: any };
-        if (querySnapshot.empty) {
-            // New user - create
-            const newUser = {
-                name,
-                email,
-                role,
-                createdAt: serverTimestamp(),
-            };
-            const docRef = await addDoc(usersRef, newUser);
-            userData = { id: docRef.id, ...newUser };
-        } else {
-            // Existing user - Update role if it changed
-            const userDoc = querySnapshot.docs[0];
-            const currentData = userDoc.data();
-            
-            if (currentData.role !== role) {
-                const userRef = doc(db, 'users', userDoc.id);
-                await updateDoc(userRef, { role });
-            }
-            
-            userData = { id: userDoc.id, ...currentData, role };
-        }
+        // #region agent log
+        fetch('http://127.0.0.1:7481/ingest/a62793e9-faf6-4aa5-8fae-f241bfabcb8d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d74878'},body:JSON.stringify({sessionId:'d74878',runId:'post-fix',hypothesisId:'H6',location:'src/app/api/auth/firebase/route.ts:35',message:'Using token-backed auth profile without Firestore dependency',data:{uidPresent:Boolean(uid),emailPresent:Boolean(email),role},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        const userData = { id: uid, name, email, role };
 
         // Set the session cookie
-        await setCookieSession(userData.id, userData.role as string);
+        await setCookieSession(userData.id, userData.role);
 
         return NextResponse.json({ success: true, user: userData });
-    } catch (error: any) {
+    } catch (error) {
         console.error('Firebase Auth Error:', error);
-        return NextResponse.json({ error: error.message || 'Authentication failed' }, { status: 401 });
+        const message = error instanceof Error ? error.message : 'Authentication failed';
+        return NextResponse.json({ error: message }, { status: 401 });
     }
 }

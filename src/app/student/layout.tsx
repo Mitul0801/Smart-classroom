@@ -15,7 +15,14 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
     ];
 
     async function handleLogout() {
-        await fetch('/api/auth/logout', { method: 'POST' });
+        const response = await fetch('/api/auth/logout', { method: 'POST' });
+        // #region agent log
+        fetch('http://127.0.0.1:7481/ingest/a62793e9-faf6-4aa5-8fae-f241bfabcb8d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d74878'},body:JSON.stringify({sessionId:'d74878',runId:'baseline',hypothesisId:'H5',location:'src/app/student/layout.tsx:20',message:'Student logout response status',data:{ok:response.ok,status:response.status},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        if (!response.ok) {
+            toast.error("Logout failed");
+            return;
+        }
         toast.success("Logged out");
         router.push('/');
     }

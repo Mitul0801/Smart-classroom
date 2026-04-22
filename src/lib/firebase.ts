@@ -4,13 +4,13 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBFcN4j-zcjqnjhoOPAdo7FLjIyBqtfN20",
-  authDomain: "smart-classroom-3a3d1.firebaseapp.com",
-  projectId: "smart-classroom-3a3d1",
-  storageBucket: "smart-classroom-3a3d1.firebasestorage.app",
-  messagingSenderId: "257963675231",
-  appId: "1:257963675231:web:35378a137d8f69aee695ea",
-  measurementId: "G-K24T3XSH14"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase

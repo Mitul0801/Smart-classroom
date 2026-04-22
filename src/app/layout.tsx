@@ -1,13 +1,10 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import './globals.css';
 import { Toaster } from '@/components/ui/sonner';
 
-const inter = Inter({ subsets: ['latin'] });
-
 export const metadata: Metadata = {
-  title: 'Smart Classroom AI',
-  description: 'A revolutionary AI-driven platform for modern classrooms.',
+  title: 'SmartClass AI – AI-Powered Classroom Platform',
+  description: 'Empowering teachers and students with AI-powered summaries, chat assistants, and classroom management.',
 };
 
 export default function RootLayout({
@@ -17,7 +14,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} min-h-screen bg-background text-foreground antialiased`}>
+      <body className="min-h-screen bg-background text-foreground antialiased">
         {children}
         <Toaster position="bottom-right" />
       </body>

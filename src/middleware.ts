@@ -2,13 +2,15 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 
-const secretKey = process.env.JWT_SECRET || 'fallback_secret';
+if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET environment variable is missing');
+}
+const secretKey = process.env.JWT_SECRET;
 const key = new TextEncoder().encode(secretKey);
 
 export async function proxy(req: NextRequest) {
     const { pathname } = req.nextUrl;
-    
-    // Check if the route is protected
+
     const isStudentRoute = pathname.startsWith('/student');
     const isTeacherRoute = pathname.startsWith('/teacher');
     const isRegisterRoute = pathname === '/register';
@@ -31,7 +33,6 @@ export async function proxy(req: NextRequest) {
 
             const role = payload.role as string;
 
-            // Role-based access control
             if (isStudentRoute && role !== 'STUDENT') {
                 return NextResponse.redirect(new URL('/teacher', req.url));
             }
