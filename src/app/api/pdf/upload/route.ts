@@ -20,24 +20,27 @@ export async function POST(req: Request) {
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        const result = await pdfParse(buffer);
-        const textContent = result.text;
+        let textContent = '';
+        try {
+            const result = await pdfParse(buffer);
+            textContent = result.text;
+        } catch (e) {
+            console.warn('PDF parsing skipped or failed:', e);
+        }
 
-        const fileName = `pdfs/${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-        const bucket = adminStorage.bucket(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
-        const fileRef = bucket.file(fileName);
-
-        await fileRef.save(buffer, {
-            metadata: { contentType: 'application/pdf' },
-        });
-
-        // Make the file publicly accessible or get a signed URL
-        // For simplicity in this app, we'll use the public URL format if the bucket is public
-        // Or generate a signed URL with a long expiration
-        const [fileUrl] = await fileRef.getSignedUrl({
-            action: 'read',
-            expires: '03-01-2500',
-        });
+        // Save locally to bypass Firebase Storage limitations
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        
+        const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+        await fs.mkdir(uploadsDir, { recursive: true });
+        
+        const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const fileName = `${Date.now()}-${safeName}`;
+        const filePath = path.join(uploadsDir, fileName);
+        
+        await fs.writeFile(filePath, buffer);
+        const fileUrl = `/uploads/${fileName}`;
 
         const teacherDoc = await adminDb.collection('users').doc(session.userId).get();
         const teacherData = teacherDoc.exists ? teacherDoc.data() : { name: 'Unknown Teacher' };
@@ -47,8 +50,8 @@ export async function POST(req: Request) {
             teacher: {
                 name: teacherData?.name || 'Unknown Teacher'
             },
-            fileUrl: fileUrl || null,
-            summary: textContent ? textContent.slice(0, 1000) : '',
+            fileUrl: fileUrl,
+            summary: textContent ? textContent.slice(0, 1000) : 'No summary available.',
             createdAt: new Date()
         });
 
