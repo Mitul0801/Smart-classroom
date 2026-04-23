@@ -1,21 +1,29 @@
 'use client';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { BrainCircuit, Send, User } from 'lucide-react';
+import { BrainCircuit, Send, User, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 export default function StudentChat() {
     const [messages, setMessages] = useState<{ role: string, content: string }[]>([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
+    const scrollRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+    }, [messages, loading]);
 
     async function sendMsg(e: React.FormEvent) {
         e.preventDefault();
         if(!input.trim() || loading) return;
 
-        const newMessages = [...messages, { role: 'user', content: input }];
+        const userMsg = { role: 'user', content: input };
+        const newMessages = [...messages, userMsg];
         setMessages(newMessages);
         setInput('');
         setLoading(true);
@@ -26,14 +34,36 @@ export default function StudentChat() {
                 body: JSON.stringify({ message: input, previousMessages: messages }),
                 headers: { 'Content-Type': 'application/json' }
             });
-            const data = await res.json();
-            
-            if (res.ok) {
-                setMessages([...newMessages, data.reply]);
-            } else {
-                setMessages([...newMessages, { role: 'system', content: 'Connection error' }]);
+
+            if (!res.ok) {
+                setMessages([...newMessages, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' }]);
+                setLoading(false);
+                return;
             }
-        } finally {
+
+            // Handle Streaming
+            const reader = res.body?.getReader();
+            if (!reader) throw new Error("No reader");
+
+            const decoder = new TextDecoder();
+            let assistantContent = '';
+            
+            // Add an empty assistant message first
+            setMessages([...newMessages, { role: 'assistant', content: '' }]);
+            setLoading(false); // Stop "Thinking..." once stream starts
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                assistantContent += chunk;
+                
+                // Update the last message in the list
+                setMessages([...newMessages, { role: 'assistant', content: assistantContent }]);
+            }
+        } catch (err) {
+            console.error(err);
             setLoading(false);
         }
     }
@@ -46,7 +76,7 @@ export default function StudentChat() {
             </h1>
 
             <Card className="flex-1 flex flex-col overflow-hidden bg-zinc-900/40 border-zinc-800/50 backdrop-blur-md">
-                <div className="flex-1 p-6 overflow-y-auto space-y-6">
+                <div ref={scrollRef} className="flex-1 p-6 overflow-y-auto space-y-6 custom-scrollbar">
                     {messages.length === 0 && (
                         <div className="h-full flex flex-col items-center justify-center text-zinc-400 opacity-50">
                             <BrainCircuit className="w-16 h-16 mb-4" />
@@ -60,8 +90,8 @@ export default function StudentChat() {
                             </div>
                             <div className={`px-4 py-3 rounded-2xl max-w-[80%] ${msg.role === 'user' ? 'bg-zinc-800 text-zinc-100' : 'bg-indigo-950/50 border border-indigo-900/50 text-indigo-100'}`}>
                                 {msg.role === 'user' ? msg.content : (
-                                    <div className="prose prose-invert prose-indigo max-w-none text-sm">
-                                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                    <div className="prose prose-invert prose-sm max-w-none">
+                                        <ReactMarkdown>{msg.content || '...'}</ReactMarkdown>
                                     </div>
                                 )}
                             </div>
@@ -72,8 +102,8 @@ export default function StudentChat() {
                             <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0 animate-pulse">
                                 <BrainCircuit className="w-5 h-5 text-white" />
                             </div>
-                            <div className="px-4 py-3 rounded-2xl bg-indigo-950/50 border border-indigo-900/50 text-indigo-300">
-                                Thinking...
+                            <div className="px-4 py-3 rounded-2xl bg-indigo-950/50 border border-indigo-900/50 text-indigo-300 flex items-center gap-2">
+                                <Loader2 className="w-4 h-4 animate-spin" /> Thinking...
                             </div>
                         </div>
                     )}

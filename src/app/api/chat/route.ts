@@ -5,11 +5,7 @@ import { adminDb } from '@/lib/firebase-admin';
 function getAiKeys() {
     return {
         openRouterKey: process.env.OPENROUTER_API_KEY,
-        geminiKey:
-            process.env.GEMINI_API_KEY ||
-            process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
-            process.env.GOOGLE_API_KEY ||
-            process.env.NEXT_PUBLIC_GEMINI_API_KEY,
+        geminiKey: process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY,
     };
 }
 
@@ -18,60 +14,17 @@ export async function POST(req: Request) {
         const { openRouterKey, geminiKey } = getAiKeys();
         const session = await getSession();
         if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        if (!geminiKey && !openRouterKey) {
-            return NextResponse.json({ error: 'AI service key missing' }, { status: 500 });
-        }
-        // #region agent log
-        fetch('http://127.0.0.1:7481/ingest/a62793e9-faf6-4aa5-8fae-f241bfabcb8d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d74878'},body:JSON.stringify({sessionId:'d74878',runId:'post-fix',hypothesisId:'H10',location:'src/app/api/chat/route.ts:24',message:'AI provider key availability at request time',data:{hasGeminiKey:Boolean(geminiKey),hasOpenRouterKey:Boolean(openRouterKey)},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-
+        
         const { message, previousMessages = [] } = await req.json();
 
         if (!message) {
             return NextResponse.json({ error: 'Missing message' }, { status: 400 });
         }
 
-        const messagesForAI = [
-            { role: 'system', content: 'You are Smart Classroom AI, a helpful, encouraging, and knowledgeable study assistant for students. Help them understand concepts, guide them through learning, and be very concise.' },
-            ...previousMessages,
-            { role: 'user', content: message }
-        ];
+        const systemPrompt = 'You are Smart Classroom AI, a helpful, encouraging, and knowledgeable study assistant for students. Help them understand concepts, guide them through learning, and be very concise.';
 
-        let aiMessage: { role: string; content: string } | null = null;
-        let geminiFailure: { status: number; detail: string } | null = null;
-        let openRouterFailure: { status: number; detail: string } | null = null;
-
-        if (geminiKey) {
-            const transcript = messagesForAI
-                .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
-                .join('\n\n');
-            const geminiPrompt = `You are Smart Classroom AI, a helpful, encouraging, and knowledgeable study assistant for students. Help them understand concepts, guide them through learning, and be very concise.\n\nConversation:\n${transcript}`;
-            const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: geminiPrompt }] }],
-                }),
-            });
-            if (geminiResponse.ok) {
-                const geminiData = await geminiResponse.json();
-                const content = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
-                // #region agent log
-                fetch('http://127.0.0.1:7481/ingest/a62793e9-faf6-4aa5-8fae-f241bfabcb8d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d74878'},body:JSON.stringify({sessionId:'d74878',runId:'post-fix',hypothesisId:'H9',location:'src/app/api/chat/route.ts:56',message:'Gemini response received',data:{hasContent:Boolean(content)},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-                if (content) {
-                    aiMessage = { role: 'assistant', content };
-                }
-            } else {
-                const errText = await geminiResponse.text();
-                geminiFailure = { status: geminiResponse.status, detail: errText.slice(0, 200) };
-                // #region agent log
-                fetch('http://127.0.0.1:7481/ingest/a62793e9-faf6-4aa5-8fae-f241bfabcb8d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d74878'},body:JSON.stringify({sessionId:'d74878',runId:'post-fix',hypothesisId:'H9',location:'src/app/api/chat/route.ts:63',message:'Gemini request failed',data:{status:geminiResponse.status,errorSnippet:errText.slice(0,200)},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-            }
-        }
-
-        if (!aiMessage && openRouterKey) {
+        // We use OpenRouter as primary for better streaming support in this example
+        if (openRouterKey) {
             const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
                 method: 'POST',
                 headers: {
@@ -80,46 +33,107 @@ export async function POST(req: Request) {
                 },
                 body: JSON.stringify({
                     model: 'meta-llama/llama-3.3-70b-instruct:free',
-                    messages: messagesForAI,
+                    stream: true,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        ...previousMessages,
+                        { role: 'user', content: message }
+                    ],
                 })
             });
 
             if (!response.ok) {
-                const errText = await response.text();
-                openRouterFailure = { status: response.status, detail: errText.slice(0, 200) };
-                // #region agent log
-                fetch('http://127.0.0.1:7481/ingest/a62793e9-faf6-4aa5-8fae-f241bfabcb8d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d74878'},body:JSON.stringify({sessionId:'d74878',runId:'post-fix',hypothesisId:'H8',location:'src/app/api/chat/route.ts:84',message:'OpenRouter request failed',data:{status:response.status,errorSnippet:errText.slice(0,200)},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-            } else {
-                const data = await response.json();
-                const content = data?.choices?.[0]?.message?.content;
-                // #region agent log
-                fetch('http://127.0.0.1:7481/ingest/a62793e9-faf6-4aa5-8fae-f241bfabcb8d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d74878'},body:JSON.stringify({sessionId:'d74878',runId:'post-fix',hypothesisId:'H8',location:'src/app/api/chat/route.ts:90',message:'OpenRouter response received',data:{hasContent:Boolean(content)},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
+                return NextResponse.json({ error: 'AI provider error' }, { status: response.status });
+            }
+
+            // Create a custom ReadableStream to parse OpenRouter's SSE format
+            const stream = new ReadableStream({
+                async start(controller) {
+                    const reader = response.body?.getReader();
+                    if (!reader) return;
+
+                    const decoder = new TextDecoder();
+                    let fullContent = '';
+
+                    try {
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+
+                            const chunk = decoder.decode(value);
+                            const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+                            for (const line of lines) {
+                                if (line.startsWith('data: ')) {
+                                    const data = line.slice(6);
+                                    if (data === '[DONE]') continue;
+                                    try {
+                                        const parsed = JSON.parse(data);
+                                        const content = parsed.choices[0]?.delta?.content || '';
+                                        if (content) {
+                                            fullContent += content;
+                                            controller.enqueue(content);
+                                        }
+                                    } catch (e) {
+                                        // Ignore parse errors for individual chunks
+                                    }
+                                }
+                            }
+                        }
+
+                        // Save history in background after stream finishes
+                        adminDb.collection('chatHistory').add({
+                            userId: session.userId,
+                            messages: JSON.stringify([
+                                ...previousMessages,
+                                { role: 'user', content: message },
+                                { role: 'assistant', content: fullContent }
+                            ]),
+                            createdAt: new Date()
+                        }).catch(e => console.error('History error', e));
+
+                    } catch (e) {
+                        controller.error(e);
+                    } finally {
+                        controller.close();
+                    }
+                }
+            });
+
+            return new Response(stream);
+        }
+
+        // Fallback to non-streaming Gemini if OpenRouter is missing
+        if (geminiKey) {
+            const transcript = [...previousMessages, { role: 'user', content: message }]
+                .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+                .join('\n\n');
+            
+            const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: `${systemPrompt}\n\n${transcript}` }] }],
+                }),
+            });
+
+            if (geminiResponse.ok) {
+                const data = await geminiResponse.json();
+                const content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                
                 if (content) {
-                    aiMessage = { role: 'assistant', content };
+                    adminDb.collection('chatHistory').add({
+                        userId: session.userId,
+                        messages: JSON.stringify([...previousMessages, { role: 'user', content: message }, { role: 'assistant', content }]),
+                        createdAt: new Date()
+                    }).catch(() => {});
+                    
+                    return NextResponse.json({ reply: { role: 'assistant', content } });
                 }
             }
         }
 
-        if (!aiMessage) {
-            const reason = geminiFailure?.detail ?? openRouterFailure?.detail ?? 'No provider returned a valid response';
-            return NextResponse.json({ error: `AI provider unavailable. ${reason}` }, { status: 502 });
-        }
-
-        // Store chat history in Firestore
-        try {
-            await adminDb.collection('chatHistory').add({
-                userId: session.userId,
-                messages: JSON.stringify([...messagesForAI, aiMessage]),
-                createdAt: new Date()
-            });
-        } catch (dbError) {
-            console.error('Error saving chat history:', dbError);
-            // Non-critical, we can still return the AI reply
-        }
-
-        return NextResponse.json({ reply: aiMessage }, { status: 200 });
+        return NextResponse.json({ error: 'AI provider unavailable' }, { status: 502 });
     } catch (error) {
         console.error('Chat Error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
