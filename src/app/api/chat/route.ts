@@ -11,11 +11,16 @@ function getAiKeys() {
 
 export async function POST(req: Request) {
     try {
+        console.log('--- Chat API Started ---');
         const { openRouterKey, geminiKey } = getAiKeys();
         const session = await getSession();
-        if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!session) {
+            console.error('Chat: No session found');
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
         
         const { message, previousMessages = [] } = await req.json();
+        console.log(`Chat: Received message from user ${session.userId}: ${message.slice(0, 50)}...`);
 
         if (!message) {
             return NextResponse.json({ error: 'Missing message' }, { status: 400 });

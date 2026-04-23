@@ -30,24 +30,18 @@ export async function GET(req: Request) {
             
             const snapshot = await query.get();
             records = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-            
-            records.sort((a, b) => {
-                const dateA = a.date?.toDate?.() || new Date(0);
-                const dateB = b.date?.toDate?.() || new Date(0);
-                return dateB.getTime() - dateA.getTime();
-            });
         } else {
             const snapshot = await attendanceRef
                 .where('studentId', '==', session.userId)
                 .get();
             records = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-            
-            records.sort((a, b) => {
-                const dateA = a.date?.toDate?.() || new Date(0);
-                const dateB = b.date?.toDate?.() || new Date(0);
-                return dateB.getTime() - dateA.getTime();
-            });
         }
+
+        records.sort((a, b) => {
+            const dateA = a.date?.toDate?.() || new Date(a.date || 0);
+            const dateB = b.date?.toDate?.() || new Date(b.date || 0);
+            return dateB.getTime() - dateA.getTime();
+        });
 
         const formattedRecords = records.map(r => ({
             ...r,
@@ -58,13 +52,13 @@ export async function GET(req: Request) {
         return NextResponse.json({ data: formattedRecords }, { status: 200 });
     } catch (error) {
         console.error('Attendance Fetch Error:', error);
-        const message = error instanceof Error ? error.message : 'Internal Server Error';
-        return NextResponse.json({ error: message }, { status: 500 });
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }
 
 export async function POST(req: Request) {
     try {
+        console.log('--- Attendance POST Started (Optimized) ---');
         const session = await getSession();
         if (!session || session.role !== 'STUDENT') {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -73,18 +67,22 @@ export async function POST(req: Request) {
         const { status } = await req.json();
         const attendanceRef = adminDb.collection('attendance');
         
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date();
-        endOfDay.setHours(23, 59, 59, 999);
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
 
-        const existing = await attendanceRef
+        // Fetch all attendance for this student to avoid composite index
+        // Since a student won't have thousands of records, filtering in memory is safe and faster than creating indexes
+        const snapshot = await attendanceRef
             .where('studentId', '==', session.userId)
-            .where('date', '>=', startOfDay)
-            .where('date', '<=', endOfDay)
             .get();
 
-        if (!existing.empty) {
+        const alreadyMarked = snapshot.docs.some(doc => {
+            const date = doc.data().date?.toDate?.() || new Date(doc.data().date);
+            return date.toISOString().split('T')[0] === todayStr;
+        });
+
+        if (alreadyMarked) {
+            console.warn('Attendance: Already marked for today (in-memory check)');
             return NextResponse.json({ error: 'Attendance already marked today' }, { status: 400 });
         }
 
@@ -93,7 +91,6 @@ export async function POST(req: Request) {
 
         const record = await attendanceRef.add({
             studentId: session.userId,
-            studentStatus: status === 'PRESENT' ? 'PRESENT' : 'ABSENT',
             status: status === 'PRESENT' ? 'PRESENT' : 'ABSENT',
             date: new Date(),
             createdAt: new Date(),
@@ -103,9 +100,10 @@ export async function POST(req: Request) {
             }
         });
 
+        console.log('✅ Attendance saved with ID:', record.id);
         return NextResponse.json({ success: true, id: record.id }, { status: 201 });
     } catch (error) {
-        console.error('Attendance Save Error:', error);
+        console.error('❌ Attendance Save Error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }
