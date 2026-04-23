@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import * as pdfParseModule from 'pdf-parse';
-const pdfParse: any = (pdfParseModule as any).default || pdfParseModule;
+import { PDFParse } from 'pdf-parse';
 import { adminDb, adminStorage } from '@/lib/firebase-admin';
 
 export async function POST(req: Request) {
@@ -21,8 +20,10 @@ export async function POST(req: Request) {
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        const parsed = await pdfParse(buffer);
-        const textContent = parsed.text;
+        const parser = new PDFParse({ data: buffer });
+        const result = await parser.getText();
+        const textContent = result.text;
+        await parser.destroy();
 
         const fileName = `pdfs/${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
         const bucket = adminStorage.bucket(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
