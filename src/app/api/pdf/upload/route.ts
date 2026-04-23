@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import pdfParse from 'pdf-parse';
+import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { adminDb, adminStorage } from '@/lib/firebase-admin';
 
 export async function POST(req: Request) {
