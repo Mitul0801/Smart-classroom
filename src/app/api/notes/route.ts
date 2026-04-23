@@ -1,16 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { db } from '@/lib/firebase';
-import { collection, query, orderBy, getDocs, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
+import { adminDb } from '@/lib/firebase-admin';
 
 export async function GET() {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-        const notesRef = collection(db, 'notes');
-        const q = query(notesRef, orderBy('createdAt', 'desc'));
-        const snapshot = await getDocs(q);
+        const snapshot = await adminDb.collection('notes').orderBy('createdAt', 'desc').get();
         
         const notes = snapshot.docs.map(doc => ({
             id: doc.id,
@@ -38,17 +35,18 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Missing title' }, { status: 400 });
         }
 
-        // Fetch teacher name to denormalize
-        const teacherDoc = await getDoc(doc(db, 'users', session.userId));
-        const teacherName = teacherDoc.exists() ? teacherDoc.data().name : 'Unknown Teacher';
+        const teacherDoc = await adminDb.collection('users').doc(session.userId).get();
+        const teacherData = teacherDoc.exists ? teacherDoc.data() : { name: 'Unknown Teacher' };
 
-        const noteRef = await addDoc(collection(db, 'notes'), {
+        const noteRef = await adminDb.collection('notes').add({
             teacherId: session.userId,
-            teacherName,
+            teacher: {
+                name: teacherData?.name || 'Unknown Teacher'
+            },
             title,
             content,
             fileUrl,
-            createdAt: serverTimestamp()
+            createdAt: new Date()
         });
 
         return NextResponse.json({ success: true, id: noteRef.id }, { status: 201 });

@@ -1,16 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { db } from '@/lib/firebase';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
+import { adminDb } from '@/lib/firebase-admin';
 
 export async function GET() {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-        const pdfsRef = collection(db, 'pdfs');
-        const q = query(pdfsRef, orderBy('createdAt', 'desc'));
-        const snapshot = await getDocs(q);
+        const snapshot = await adminDb.collection('pdfs').orderBy('createdAt', 'desc').get();
         
         const pdfs = snapshot.docs.map(doc => ({
             id: doc.id,

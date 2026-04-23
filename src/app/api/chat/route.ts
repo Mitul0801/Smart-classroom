@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { adminDb } from '@/lib/firebase-admin';
 
 function getAiKeys() {
     return {
@@ -110,10 +109,10 @@ export async function POST(req: Request) {
 
         // Store chat history in Firestore
         try {
-            await addDoc(collection(db, 'chatHistory'), {
+            await adminDb.collection('chatHistory').add({
                 userId: session.userId,
                 messages: JSON.stringify([...messagesForAI, aiMessage]),
-                createdAt: serverTimestamp()
+                createdAt: new Date()
             });
         } catch (dbError) {
             console.error('Error saving chat history:', dbError);

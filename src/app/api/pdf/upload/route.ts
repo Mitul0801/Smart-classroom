@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import * as pdfParseModule from 'pdf-parse';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const pdfParse: any = (pdfParseModule as any).default || pdfParseModule;
-import { db, storage } from '@/lib/firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { adminDb, adminStorage } from '@/lib/firebase-admin';
 
 export async function POST(req: Request) {
     try {
@@ -24,26 +21,36 @@ export async function POST(req: Request) {
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        // Parse PDF to extract text
         const parsed = await pdfParse(buffer);
         const textContent = parsed.text;
 
-        // Upload to Firebase Storage
         const fileName = `pdfs/${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-        const storageRef = ref(storage, fileName);
-        
-        await uploadBytes(storageRef, buffer, {
-            contentType: 'application/pdf',
-        });
-        
-        const fileUrl = await getDownloadURL(storageRef);
+        const bucket = adminStorage.bucket(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
+        const fileRef = bucket.file(fileName);
 
-        // Create PDF record in Firestore
-        const pdfRef = await addDoc(collection(db, 'pdfs'), {
+        await fileRef.save(buffer, {
+            metadata: { contentType: 'application/pdf' },
+        });
+
+        // Make the file publicly accessible or get a signed URL
+        // For simplicity in this app, we'll use the public URL format if the bucket is public
+        // Or generate a signed URL with a long expiration
+        const [fileUrl] = await fileRef.getSignedUrl({
+            action: 'read',
+            expires: '03-01-2500',
+        });
+
+        const teacherDoc = await adminDb.collection('users').doc(session.userId).get();
+        const teacherData = teacherDoc.exists ? teacherDoc.data() : { name: 'Unknown Teacher' };
+
+        const pdfRef = await adminDb.collection('pdfs').add({
             teacherId: session.userId,
+            teacher: {
+                name: teacherData?.name || 'Unknown Teacher'
+            },
             fileUrl,
             summary: textContent.slice(0, 1000),
-            createdAt: serverTimestamp()
+            createdAt: new Date()
         });
 
         return NextResponse.json({ 
