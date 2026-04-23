@@ -24,12 +24,15 @@ export async function GET() {
 
 export async function POST(req: Request) {
     try {
+        console.log('--- Notes POST Started ---');
         const session = await getSession();
         if (!session || session.role !== 'TEACHER') {
+            console.error('Notes: Unauthorized or not a teacher', session?.role);
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
         const { title, content, fileUrl } = await req.json();
+        console.log(`Notes: Publishing note "${title}" by teacher ${session.userId}`);
 
         if (!title) {
             return NextResponse.json({ error: 'Missing title' }, { status: 400 });
@@ -43,9 +46,9 @@ export async function POST(req: Request) {
             teacher: {
                 name: teacherData?.name || 'Unknown Teacher'
             },
-            title,
-            content,
-            fileUrl,
+            title: title || '',
+            content: content || '',
+            fileUrl: fileUrl || null,
             createdAt: new Date()
         });
 

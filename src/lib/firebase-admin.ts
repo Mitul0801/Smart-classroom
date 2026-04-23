@@ -3,7 +3,6 @@ import * as admin from 'firebase-admin';
 if (!admin.apps.length) {
   try {
     console.log('Firebase Admin: Initializing...');
-    console.log('Project ID:', process.env.FIREBASE_PROJECT_ID);
     admin.initializeApp({
       credential: admin.credential.cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
