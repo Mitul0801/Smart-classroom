@@ -44,12 +44,12 @@ export async function POST(req: Request) {
         const teacherData = teacherDoc.exists ? teacherDoc.data() : { name: 'Unknown Teacher' };
 
         const pdfRef = await adminDb.collection('pdfs').add({
-            teacherId: session.userId,
+            teacherId: session.userId || '',
             teacher: {
                 name: teacherData?.name || 'Unknown Teacher'
             },
-            fileUrl,
-            summary: textContent.slice(0, 1000),
+            fileUrl: fileUrl || null,
+            summary: textContent ? textContent.slice(0, 1000) : '',
             createdAt: new Date()
         });
 
