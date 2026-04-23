@@ -45,3 +45,5 @@ next-env.d.ts
 # local sqlite database
 *.db
 *.db-journal
+
+public/uploads
