@@ -37,8 +37,8 @@ export async function POST(req: Request) {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    // Using Google's Gemma 3 27B IT Free via OpenRouter
-                    model: 'google/gemma-3-27b-it:free',
+                    // Using Google's Gemma 3 4B IT Free via OpenRouter
+                    model: 'google/gemma-3-4b-it:free',
                     stream: true,
                     messages: [
                         { role: 'system', content: systemPrompt },
@@ -75,7 +75,16 @@ export async function POST(req: Request) {
                                     if (data === '[DONE]') continue;
                                     try {
                                         const parsed = JSON.parse(data);
-                                        const content = parsed.choices[0]?.delta?.content || '';
+                                        
+                                        // Handle OpenRouter streaming errors
+                                        if (parsed.error && parsed.error.message) {
+                                            const errMsg = `[API Error: ${parsed.error.message}]`;
+                                            fullContent += errMsg;
+                                            controller.enqueue(errMsg);
+                                            continue;
+                                        }
+
+                                        const content = parsed.choices?.[0]?.delta?.content || '';
                                         if (content) {
                                             fullContent += content;
                                             controller.enqueue(content);
