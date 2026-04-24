@@ -37,8 +37,8 @@ export async function POST(req: Request) {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    // Using Gemini 2.0 Flash Lite Free via OpenRouter
-                    model: 'google/gemini-2.0-flash-lite-preview-02-05:free',
+                    // Using Google's Gemma 3 27B IT Free via OpenRouter
+                    model: 'google/gemma-3-27b-it:free',
                     stream: true,
                     messages: [
                         { role: 'system', content: systemPrompt },
