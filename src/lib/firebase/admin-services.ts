@@ -424,7 +424,7 @@ export async function listAttendance(date?: string): Promise<AttendanceStats> {
       id: item.id,
       studentName: String(item.data().student?.name || 'Student'),
       studentEmail: String(item.data().student?.email || 'student@smartclass.ai'),
-      status: item.data().status === 'ABSENT' ? 'ABSENT' : 'PRESENT',
+      status: (item.data().status === 'ABSENT' ? 'ABSENT' : 'PRESENT') as 'PRESENT' | 'ABSENT',
       date: serializeDate(item.data().date),
     })) || [];
 
@@ -511,7 +511,7 @@ export async function getStudentAttendanceHistory(userId: string): Promise<{
         id: item.id,
         studentName: String(item.data().student?.name || 'Student'),
         studentEmail: String(item.data().student?.email || 'student@smartclass.ai'),
-        status: item.data().status === 'ABSENT' ? 'ABSENT' : 'PRESENT',
+        status: (item.data().status === 'ABSENT' ? 'ABSENT' : 'PRESENT') as 'PRESENT' | 'ABSENT',
         date: serializeDate(item.data().date),
       }))
       .sort((a, b) => b.date.localeCompare(a.date)) || [];
