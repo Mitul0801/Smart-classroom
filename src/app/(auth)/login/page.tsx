@@ -2,16 +2,19 @@
 import { useState, useEffect, Suspense } from 'react';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button } from '@/components/ui/button';
+import { usePostHog } from 'posthog-js/react';
+import { CtaButton } from '@/components/cta-button';
+import { PageShell } from '@/components/page-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { BrainCircuit, Loader2, AlertCircle } from 'lucide-react';
+import { BrainCircuit, Loader2, AlertCircle, CheckCircle2, GraduationCap, School2 } from 'lucide-react';
 import { signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
 
 function LoginContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const posthog = usePostHog();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [role, setRole] = useState<'STUDENT' | 'TEACHER'>('STUDENT');
@@ -39,14 +42,15 @@ function LoginContent() {
             const data = await res.json();
             
             if (res.ok) {
+                posthog?.identify(result.user.uid, {
+                    email: result.user.email,
+                    role,
+                    name: result.user.displayName,
+                });
+                posthog?.capture('login_event', { role });
                 toast.success('Logged in successfully!');
-                // Precise routing based on role
                 const userRole = data.user.role;
-                if (!userRole) {
-                    router.push('/onboarding');
-                } else {
-                    router.push(userRole === 'TEACHER' ? '/teacher' : '/student');
-                }
+                router.push(userRole === 'TEACHER' ? '/teacher' : '/student');
             } else {
                 setError(data.error || 'Login failed. Please try again.');
                 toast.error(data.error || 'Login failed');
@@ -65,73 +69,109 @@ function LoginContent() {
     }
 
     return (
-        <Card className="bg-zinc-900/40 border-zinc-800/50 backdrop-blur-xl shadow-2xl w-full max-w-md mx-auto sm:border md:rounded-3xl">
-            <CardHeader className="space-y-3 pb-6">
-                <div className="flex justify-center mb-2">
-                    <div className="w-12 h-12 rounded-xl bg-indigo-500/10 flex items-center justify-center">
-                        <BrainCircuit className="w-6 h-6 text-indigo-400" />
+        <div className="grid w-full overflow-hidden rounded-[2rem] border border-white/40 bg-white/80 shadow-[0_30px_80px_-35px_rgba(79,70,229,0.45)] backdrop-blur-xl lg:grid-cols-2 dark:border-white/10 dark:bg-slate-950/70">
+            <div className="relative overflow-hidden bg-linear-to-br from-indigo-700 via-violet-700 to-purple-700 p-8 text-white sm:p-10">
+                <div className="relative z-10">
+                    <div className="flex items-center gap-3">
+                        <div className="rounded-2xl bg-white/15 p-3">
+                            <BrainCircuit className="size-6" />
+                        </div>
+                        <div>
+                            <p className="text-lg font-semibold">SmartClass AI</p>
+                            <p className="text-sm text-white/75">AI classroom platform</p>
+                        </div>
+                    </div>
+                    <h1 className="mt-12 text-4xl font-semibold leading-tight">
+                        One workspace for guided learning, teaching, and classroom momentum.
+                    </h1>
+                    <p className="mt-4 max-w-md text-white/80">
+                        Sign in once, choose your role, and move from uploaded content to AI-supported teaching in minutes.
+                    </p>
+                    <div className="mt-10 space-y-4">
+                        {[
+                            'Upload PDFs and turn them into summaries and quizzes',
+                            'Track assignments, attendance, announcements, and polls',
+                            'Stay synced across student and teacher dashboards',
+                        ].map((item) => (
+                            <div key={item} className="flex items-start gap-3 rounded-2xl bg-white/10 px-4 py-3">
+                                <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-white" />
+                                <span className="text-sm text-white/90">{item}</span>
+                            </div>
+                        ))}
                     </div>
                 </div>
-                <CardTitle className="text-2xl font-bold text-center text-zinc-50">
-                    {searchParams.get('mode') === 'signup' ? 'Create your Account' : 'Welcome Back'}
-                </CardTitle>
-                <CardDescription className="text-center text-zinc-400">
-                    Sign in with Google to access your smart classroom
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-                <div className="flex p-1 bg-zinc-950/50 rounded-lg border border-zinc-800 relative z-10 text-sm">
-                    <button 
-                        onClick={() => setRole('STUDENT')}
-                        className={`flex-1 py-2 font-medium rounded-md transition-all ${role === 'STUDENT' ? 'bg-indigo-600 text-white shadow-lg' : 'text-zinc-400 hover:text-zinc-200'}`}
-                    >
-                        Student
-                    </button>
-                    <button 
-                        onClick={() => setRole('TEACHER')}
-                        className={`flex-1 py-2 font-medium rounded-md transition-all ${role === 'TEACHER' ? 'bg-indigo-600 text-white shadow-lg' : 'text-zinc-400 hover:text-zinc-200'}`}
-                    >
-                        Teacher
-                    </button>
-                </div>
+                <div className="absolute -right-10 top-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+                <div className="absolute -left-10 bottom-0 h-48 w-48 rounded-full bg-fuchsia-400/20 blur-3xl" />
+            </div>
 
-                {error && (
-                    <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg flex items-center gap-3 text-sm animate-in fade-in duration-300">
-                        <AlertCircle className="w-4 h-4 shrink-0" />
-                        <p>{error}</p>
+            <Card className="border-0 bg-transparent shadow-none">
+                <CardHeader className="space-y-3 px-8 pt-8 sm:px-10 sm:pt-10">
+                    <CardTitle className="text-3xl font-bold text-slate-900 dark:text-slate-50">
+                        {searchParams.get('mode') === 'signup' ? 'Create your account' : 'Welcome back'}
+                    </CardTitle>
+                    <CardDescription className="text-slate-600 dark:text-slate-300">
+                        Use Google to enter your SmartClass AI workspace.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6 px-8 pb-8 sm:px-10 sm:pb-10">
+                    <div className="rounded-full border border-slate-200 bg-slate-100 p-1 dark:border-white/10 dark:bg-white/5">
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                            <button 
+                                onClick={() => setRole('STUDENT')}
+                                className={`flex items-center justify-center gap-2 rounded-full px-4 py-3 font-medium transition-all ${role === 'STUDENT' ? 'bg-white text-slate-950 shadow-sm dark:bg-indigo-500 dark:text-white' : 'border border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'}`}
+                            >
+                                <GraduationCap className="size-4" />
+                                Student
+                            </button>
+                            <button 
+                                onClick={() => setRole('TEACHER')}
+                                className={`flex items-center justify-center gap-2 rounded-full px-4 py-3 font-medium transition-all ${role === 'TEACHER' ? 'bg-white text-slate-950 shadow-sm dark:bg-indigo-500 dark:text-white' : 'border border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'}`}
+                            >
+                                <School2 className="size-4" />
+                                Teacher
+                            </button>
+                        </div>
                     </div>
-                )}
 
-                <Button 
-                    disabled={loading} 
-                    onClick={onGoogleLogin}
-                    className="w-full h-12 bg-white hover:bg-zinc-100 text-zinc-900 font-bold shadow-lg transition-all flex items-center justify-center gap-3 rounded-xl"
-                >
-                    {loading ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                        <Image src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width={20} height={20} className="w-5 h-5" />
+                    {error && (
+                        <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-500 animate-in fade-in duration-300 dark:text-red-300">
+                            <div className="flex items-center gap-3">
+                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                <p>{error}</p>
+                            </div>
+                        </div>
                     )}
-                    {loading ? 'Authenticating...' : `Sign in as ${role === 'TEACHER' ? 'Teacher' : 'Student'}`}
-                </Button>
 
-                <p className="text-center text-[10px] text-zinc-500 px-4 uppercase tracking-widest">
-                    Secure Cloud Encryption Enabled
-                </p>
-            </CardContent>
-        </Card>
+                    <CtaButton 
+                        disabled={loading} 
+                        onClick={onGoogleLogin}
+                        className="h-13 w-full justify-center gap-3 rounded-2xl text-base font-semibold"
+                    >
+                        {loading ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                            <Image src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width={20} height={20} className="w-5 h-5 rounded-full bg-white" />
+                        )}
+                        {loading ? 'Authenticating...' : `Continue as ${role === 'TEACHER' ? 'Teacher' : 'Student'}`}
+                    </CtaButton>
+
+                    <p className="text-center text-[11px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                        Secure Google sign-in powered by Firebase Auth
+                    </p>
+                </CardContent>
+            </Card>
+        </div>
     );
 }
 
 export default function LoginPage() {
     return (
-        <div className="min-h-screen flex items-center justify-center p-4 bg-zinc-950 relative">
-             <div className="absolute top-[-10%] left-[-10%] w-[40rem] h-[40rem] bg-indigo-600/10 blur-[100px] rounded-full pointer-events-none" />
-             <div className="absolute bottom-[-10%] right-[-10%] w-[40rem] h-[40rem] bg-violet-600/10 blur-[100px] rounded-full pointer-events-none" />
-             
-             <Suspense fallback={<Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />}>
-                <LoginContent />
-             </Suspense>
-        </div>
+        <PageShell>
+            <div className="section-shell flex min-h-screen items-center justify-center py-10">
+                <Suspense fallback={<Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />}>
+                    <LoginContent />
+                </Suspense>
+            </div>
+        </PageShell>
     );
 }

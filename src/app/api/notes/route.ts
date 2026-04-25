@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { adminDb } from '@/lib/firebase-admin';
+import { listClassrooms, recordTeacherUpload } from '@/lib/firebase/admin-services';
 
 export async function GET() {
     try {
@@ -32,7 +33,6 @@ export async function POST(req: Request) {
         }
 
         const { title, content, fileUrl } = await req.json();
-        console.log(`Notes: Publishing note "${title}" by teacher ${session.userId}`);
 
         if (!title) {
             return NextResponse.json({ error: 'Missing title' }, { status: 400 });
@@ -40,6 +40,7 @@ export async function POST(req: Request) {
 
         const teacherDoc = await adminDb.collection('users').doc(session.userId).get();
         const teacherData = teacherDoc.exists ? teacherDoc.data() : { name: 'Unknown Teacher' };
+        const classroom = (await listClassrooms())[0];
 
         const noteRef = await adminDb.collection('notes').add({
             teacherId: session.userId,
@@ -49,8 +50,11 @@ export async function POST(req: Request) {
             title: title || '',
             content: content || '',
             fileUrl: fileUrl || null,
+            classroomId: classroom?.id || 'class-physics',
             createdAt: new Date()
         });
+
+        await recordTeacherUpload(session.userId, title);
 
         return NextResponse.json({ success: true, id: noteRef.id }, { status: 201 });
     } catch (error) {

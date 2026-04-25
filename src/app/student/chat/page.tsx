@@ -1,127 +1,182 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
-import { BrainCircuit, Send, User, Loader2 } from 'lucide-react';
+
+import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { Bookmark, BrainCircuit, Loader2, Send, User } from 'lucide-react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { usePostHog } from 'posthog-js/react';
+import { toast } from 'sonner';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { LoadingSkeleton } from '@/components/loading-skeleton';
+import { fetchJson } from '@/lib/api';
+
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
 
 export default function StudentChat() {
-    const [messages, setMessages] = useState<{ role: string, content: string }[]>([]);
-    const [input, setInput] = useState('');
-    const [loading, setLoading] = useState(false);
-    const scrollRef = useRef<HTMLDivElement>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const posthog = usePostHog();
+  const historyQuery = useQuery({
+    queryKey: ['chat-history'],
+    queryFn: () =>
+      fetchJson<{ data: Array<{ role: 'user' | 'assistant'; content: string }> }>('/api/chat/history').then(
+        (res) => res.data,
+      ),
+  });
 
-    useEffect(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  const sendMessage = useMutation({
+    mutationFn: (payload: { message: string; previousMessages: Message[] }) =>
+      fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).then(async (res) => {
+        const text = await res.text();
+        if (!res.ok) {
+          try {
+            const data = JSON.parse(text) as { error?: string };
+            throw new Error(data.error || 'Chat failed');
+          } catch {
+            throw new Error(text || 'Chat failed');
+          }
         }
-    }, [messages, loading]);
+        return text;
+      }),
+    onSuccess: (assistantMessage, variables) => {
+      setMessages([...variables.previousMessages, { role: 'user', content: variables.message }, { role: 'assistant', content: assistantMessage }]);
+      posthog?.capture('ai_chat_message_sent');
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Chat failed');
+    },
+  });
 
-    async function sendMsg(e: React.FormEvent) {
-        e.preventDefault();
-        if(!input.trim() || loading) return;
+  const saveBookmark = useMutation({
+    mutationFn: (content: string) =>
+      fetchJson<{ success: boolean }>('/api/bookmarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'Study Assistant', content }),
+      }),
+    onSuccess: () => toast.success('Saved to My Notes'),
+    onError: () => toast.error('Could not save note'),
+  });
 
-        const userMsg = { role: 'user', content: input };
-        const newMessages = [...messages, userMsg];
-        setMessages(newMessages);
-        setInput('');
-        setLoading(true);
-
-        try {
-            const res = await fetch('/api/chat', {
-                method: 'POST',
-                body: JSON.stringify({ message: input, previousMessages: messages }),
-                headers: { 'Content-Type': 'application/json' }
-            });
-
-            if (!res.ok) {
-                setMessages([...newMessages, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' }]);
-                setLoading(false);
-                return;
-            }
-
-            // Handle Streaming
-            const reader = res.body?.getReader();
-            if (!reader) throw new Error("No reader");
-
-            const decoder = new TextDecoder();
-            let assistantContent = '';
-            
-            // Add an empty assistant message first
-            setMessages([...newMessages, { role: 'assistant', content: '' }]);
-            setLoading(false); // Stop "Thinking..." once stream starts
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-                assistantContent += chunk;
-                
-                // Update the last message in the list
-                setMessages([...newMessages, { role: 'assistant', content: assistantContent }]);
-            }
-        } catch (err) {
-            console.error(err);
-            setLoading(false);
-        }
+  useEffect(() => {
+    if (historyQuery.data && messages.length === 0) {
+      setMessages(historyQuery.data);
     }
+  }, [historyQuery.data, messages.length]);
 
-    return (
-        <div className="h-full flex flex-col p-6 max-w-4xl mx-auto relative z-10 w-full">
-            <h1 className="text-2xl font-bold mb-6 text-white flex items-center gap-3">
-                <BrainCircuit className="text-indigo-400" />
-                AI Study Assistant
-            </h1>
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, sendMessage.isPending]);
 
-            <Card className="flex-1 flex flex-col overflow-hidden bg-zinc-900/40 border-zinc-800/50 backdrop-blur-md">
-                <div ref={scrollRef} className="flex-1 p-6 overflow-y-auto space-y-6 custom-scrollbar">
-                    {messages.length === 0 && (
-                        <div className="h-full flex flex-col items-center justify-center text-zinc-400 opacity-50">
-                            <BrainCircuit className="w-16 h-16 mb-4" />
-                            <p>Ask anything related to your studies!</p>
-                        </div>
-                    )}
-                    {messages.map((msg, i) => (
-                        <div key={i} className={`flex items-start gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-emerald-600' : 'bg-indigo-600'}`}>
-                                {msg.role === 'user' ? <User className="w-5 h-5 text-white" /> : <BrainCircuit className="w-5 h-5 text-white" />}
-                            </div>
-                            <div className={`px-4 py-3 rounded-2xl max-w-[80%] ${msg.role === 'user' ? 'bg-zinc-800 text-zinc-100' : 'bg-indigo-950/50 border border-indigo-900/50 text-indigo-100'}`}>
-                                {msg.role === 'user' ? msg.content : (
-                                    <div className="prose prose-invert prose-sm max-w-none">
-                                        <ReactMarkdown>{msg.content || '...'}</ReactMarkdown>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    ))}
-                    {loading && (
-                        <div className="flex items-start gap-4">
-                            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0 animate-pulse">
-                                <BrainCircuit className="w-5 h-5 text-white" />
-                            </div>
-                            <div className="px-4 py-3 rounded-2xl bg-indigo-950/50 border border-indigo-900/50 text-indigo-300 flex items-center gap-2">
-                                <Loader2 className="w-4 h-4 animate-spin" /> Thinking...
-                            </div>
-                        </div>
-                    )}
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-semibold text-slate-950 dark:text-white">AI Study Assistant</h1>
+        <p className="mt-2 text-slate-600 dark:text-slate-300">
+          Ask for explanations, examples, or quick recaps. Save useful answers straight into My Notes.
+        </p>
+      </div>
+
+      <Card className="glass-card flex min-h-[70vh] flex-col overflow-hidden rounded-[2rem]">
+        <div ref={scrollRef} className="pretty-scrollbar flex-1 space-y-6 overflow-y-auto p-5 sm:p-6">
+          {historyQuery.isLoading ? (
+            <div className="space-y-4">
+              <LoadingSkeleton lines={3} />
+              <LoadingSkeleton lines={2} />
+            </div>
+          ) : null}
+          {messages.length === 0 && (
+            <div className="flex h-full min-h-80 flex-col items-center justify-center text-center text-slate-500 dark:text-slate-400">
+              <BrainCircuit className="mb-4 size-14 text-indigo-500" />
+              <p className="text-lg font-medium">Ask anything about your study materials.</p>
+            </div>
+          )}
+          {messages.map((message, index) => (
+            <div key={`${message.role}-${index}`} className={`flex gap-4 ${message.role === 'user' ? 'justify-end' : ''}`}>
+              <div className={`flex max-w-[92%] gap-3 sm:max-w-[80%] ${message.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                <div className={`mt-1 flex size-9 shrink-0 items-center justify-center rounded-2xl ${message.role === 'user' ? 'bg-emerald-500 text-white' : 'bg-indigo-500 text-white'}`}>
+                  {message.role === 'user' ? <User className="size-4" /> : <BrainCircuit className="size-4" />}
                 </div>
-                <div className="p-4 border-t border-zinc-800 bg-zinc-950/50">
-                    <form onSubmit={sendMsg} className="flex items-center gap-3">
-                        <Input 
-                            value={input} 
-                            onChange={e => setInput(e.target.value)} 
-                            placeholder="Type your question..." 
-                            className="flex-1 bg-zinc-900 border-zinc-700 h-12 rounded-xl focus-visible:ring-indigo-500 text-zinc-100" 
-                        />
-                        <Button type="submit" disabled={loading} size="icon" className="h-12 w-12 rounded-xl bg-indigo-600 hover:bg-indigo-500 shadow-md">
-                            <Send className="w-5 h-5" />
+                <div className={`rounded-[1.5rem] px-4 py-3 ${message.role === 'user' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'border border-indigo-200 bg-indigo-50 text-slate-800 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-slate-100'}`}>
+                  {message.role === 'user' ? (
+                    <p>{message.content}</p>
+                  ) : (
+                    <>
+                      <div className="prose prose-sm max-w-none dark:prose-invert">
+                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                      </div>
+                      <div className="mt-3 flex justify-end">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-full"
+                          onClick={() => saveBookmark.mutate(message.content)}
+                        >
+                          <Bookmark className="size-4" />
+                          Save note
                         </Button>
-                    </form>
+                      </div>
+                    </>
+                  )}
                 </div>
-            </Card>
+              </div>
+            </div>
+          ))}
+
+          {sendMessage.isPending && (
+            <div className="flex gap-3">
+              <div className="flex size-9 items-center justify-center rounded-2xl bg-indigo-500 text-white">
+                <BrainCircuit className="size-4" />
+              </div>
+              <div className="rounded-[1.5rem] border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-slate-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-slate-100">
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="size-4 animate-spin" />
+                  Thinking...
+                </span>
+              </div>
+            </div>
+          )}
         </div>
-    );
+        <div className="border-t border-slate-200/70 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-950/60">
+          <form
+            className="flex gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!input.trim() || sendMessage.isPending) {
+                return;
+              }
+              const previousMessages = [...messages];
+              const message = input.trim();
+              setInput('');
+              setMessages([...previousMessages, { role: 'user', content: message }]);
+              sendMessage.mutate({ message, previousMessages });
+            }}
+          >
+            <Input
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="Ask your next question..."
+              className="h-12 rounded-2xl bg-slate-50 dark:bg-white/5"
+            />
+            <Button type="submit" className="h-12 rounded-2xl bg-linear-to-r from-indigo-600 to-purple-600 text-white">
+              <Send className="size-4" />
+            </Button>
+          </form>
+        </div>
+      </Card>
+    </div>
+  );
 }

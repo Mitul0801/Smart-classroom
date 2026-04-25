@@ -1,160 +1,360 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BookOpen, FileText, Download, DownloadCloud, Loader2 } from 'lucide-react';
+
+import { useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { usePostHog } from 'posthog-js/react';
+import { BookOpen, BrainCircuit, Download, FileText, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ErrorState } from '@/components/error-state';
+import { LoadingSkeleton } from '@/components/loading-skeleton';
+import { CtaButton } from '@/components/cta-button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { fetchJson } from '@/lib/api';
+import type { QuizQuestion } from '@/lib/types';
 
-interface Note {
-    id: string;
-    title: string;
-    content: string;
-    fileUrl?: string;
-    teacher: { name: string };
-    createdAt: string;
+interface NoteItem {
+  id: string;
+  title: string;
+  content: string;
+  fileUrl?: string;
+  teacher: { name: string };
+  createdAt: string;
+  classroomId?: string;
 }
 
-interface Pdf {
-    id: string;
-    teacher: { name: string };
-    fileUrl: string;
-    createdAt: string;
+interface PdfItem {
+  id: string;
+  teacher: { name: string };
+  fileUrl: string;
+  createdAt: string;
+  summary?: string;
 }
 
 export default function StudentNotes() {
-    const [notes, setNotes] = useState<Note[]>([]);
-    const [pdfs, setPdfs] = useState<Pdf[]>([]);
-    const [summaryState, setSummaryState] = useState<{ isOpen: boolean, content: string, title: string }>({ isOpen: false, content: '', title: '' });
-    const [loadingSummaryId, setLoadingSummaryId] = useState<string | null>(null);
+  const posthog = usePostHog();
+  const [summaryState, setSummaryState] = useState<{ open: boolean; title: string; content: string; id: string }>({
+    open: false,
+    title: '',
+    content: '',
+    id: '',
+  });
+  const [quizState, setQuizState] = useState<{
+    open: boolean;
+    questions: QuizQuestion[];
+    currentIndex: number;
+    answers: string[];
+  }>({
+    open: false,
+    questions: [],
+    currentIndex: 0,
+    answers: [],
+  });
 
-    useEffect(() => {
-        fetch('/api/notes')
-            .then(async res => {
-                const payload = await res.json();
-                // #region agent log
-                fetch('http://127.0.0.1:7481/ingest/a62793e9-faf6-4aa5-8fae-f241bfabcb8d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d74878'},body:JSON.stringify({sessionId:'d74878',runId:'baseline',hypothesisId:'H2',location:'src/app/student/notes/page.tsx:32',message:'Notes endpoint result',data:{ok:res.ok,status:res.status,hasData:Array.isArray(payload?.data),error:payload?.error||null},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-                if (!res.ok) {
-                    toast.error(payload?.error || 'Failed to load notes');
-                    setNotes([]);
-                    return;
-                }
-                setNotes(payload.data || []);
-            });
-        fetch('/api/pdf')
-            .then(async res => {
-                const payload = await res.json();
-                // #region agent log
-                fetch('http://127.0.0.1:7481/ingest/a62793e9-faf6-4aa5-8fae-f241bfabcb8d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d74878'},body:JSON.stringify({sessionId:'d74878',runId:'baseline',hypothesisId:'H2',location:'src/app/student/notes/page.tsx:39',message:'PDF endpoint result',data:{ok:res.ok,status:res.status,hasData:Array.isArray(payload?.data),error:payload?.error||null},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-                if (!res.ok) {
-                    toast.error(payload?.error || 'Failed to load PDFs');
-                    setPdfs([]);
-                    return;
-                }
-                setPdfs(payload.data || []);
-            });
-    }, []);
+  const notesQuery = useQuery({
+    queryKey: ['notes'],
+    queryFn: () => fetchJson<{ data: NoteItem[] }>('/api/notes').then((res) => res.data),
+  });
 
+  const pdfsQuery = useQuery({
+    queryKey: ['pdfs'],
+    queryFn: () => fetchJson<{ data: PdfItem[] }>('/api/pdf').then((res) => res.data),
+  });
+
+  const dashboardQuery = useQuery({
+    queryKey: ['notes-dashboard'],
+    queryFn: () => fetchJson<{ data: import('@/lib/types').DashboardPayload }>('/api/dashboard/student').then((res) => res.data),
+  });
+
+  const summarize = useMutation({
+    mutationFn: (note: NoteItem) =>
+      fetchJson<{ result: string }>('/api/summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: note.content,
+          type: 'summarize',
+          title: note.title,
+          sourceType: 'NOTE',
+          classroomId: note.classroomId || 'class-physics',
+        }),
+      }),
+    onSuccess: (data, variables) => {
+      setSummaryState({
+        open: true,
+        title: variables.title,
+        content: data.result,
+        id: variables.id,
+      });
+      posthog?.capture('summary_generated', { source: 'note' });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Summary failed');
+    },
+  });
+
+  const quiz = useMutation({
+    mutationFn: (summary: string) =>
+      fetchJson<{ data: QuizQuestion[]; usage?: { count: number; remaining: number } }>('/api/quiz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ summary }),
+      }),
+    onSuccess: (data) => {
+      setQuizState({
+        open: true,
+        questions: data.data,
+        currentIndex: 0,
+        answers: [],
+      });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Quiz generation failed');
+    },
+  });
+
+  const currentQuestion = quizState.questions[quizState.currentIndex];
+  const score = useMemo(
+    () =>
+      quizState.questions.reduce((total, question, index) => {
+        return total + (quizState.answers[index] === question.answer ? 1 : 0);
+      }, 0),
+    [quizState.answers, quizState.questions],
+  );
+
+  if (notesQuery.isLoading || pdfsQuery.isLoading) {
     return (
-        <div className="p-8 max-w-5xl mx-auto z-10 relative">
-            <h1 className="text-3xl font-bold mb-8 items-center flex gap-3 text-white">
-                <BookOpen className="text-violet-400" /> Class Content
-            </h1>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div>
-                    <h2 className="text-xl font-semibold mb-4 text-zinc-100 flex items-center gap-2">
-                        <FileText className="w-5 h-5 text-indigo-400" /> Uploaded Notes
-                    </h2>
-                    <div className="space-y-4">
-                        {notes.length === 0 ? <p className="text-zinc-500">No notes available.</p> : notes.map(note => (
-                            <Card key={note.id} className="bg-zinc-900/40 border-zinc-800/50 backdrop-blur-md">
-                                <CardHeader className="bg-zinc-800/20 border-b border-zinc-800/50 py-3">
-                                    <CardTitle className="text-lg text-zinc-100">{note.title}</CardTitle>
-                                    <p className="text-xs text-zinc-400">By {note.teacher.name} on {new Date(note.createdAt).toLocaleDateString()}</p>
-                                </CardHeader>
-                                <CardContent className="p-4">
-                                    {note.content && (
-                                        <div className="prose prose-invert prose-sm text-zinc-300 max-h-60 overflow-y-auto custom-scrollbar">
-                                            <ReactMarkdown>{note.content}</ReactMarkdown>
-                                        </div>
-                                    )}
-                                    <div className="flex gap-2 mt-4">
-                                        {note.fileUrl && (
-                                            <a href={note.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 text-sm font-medium">
-                                                <DownloadCloud className="w-4 h-4" /> Download
-                                            </a>
-                                        )}
-                                        <button 
-                                            disabled={loadingSummaryId === note.id}
-                                            onClick={async () => {
-                                                setLoadingSummaryId(note.id);
-                                                try {
-                                                    const res = await fetch('/api/summarize', {
-                                                        method: 'POST',
-                                                        body: JSON.stringify({ text: note.content, type: 'summarize' }),
-                                                        headers: { 'Content-Type': 'application/json' }
-                                                    });
-                                                    const data = await res.json();
-                                                    if (res.ok) {
-                                                        setSummaryState({ isOpen: true, content: data.result, title: note.title });
-                                                    } else {
-                                                        toast.error("Failed to summarize");
-                                                    }
-                                                } catch (e) {
-                                                    toast.error("An error occurred");
-                                                } finally {
-                                                    setLoadingSummaryId(null);
-                                                }
-                                            }}
-                                            className="text-violet-400 hover:text-violet-300 text-sm font-medium flex items-center gap-2 disabled:opacity-50"
-                                        >
-                                            {loadingSummaryId === note.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookOpen className="w-4 h-4" />}
-                                            {loadingSummaryId === note.id ? 'Summarizing...' : 'Summarize'}
-                                        </button>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </div>
-                </div>
-
-                <div>
-                    <h2 className="text-xl font-semibold mb-4 text-zinc-100 flex items-center gap-2">
-                        <BookOpen className="w-5 h-5 text-violet-400" /> Resources & PDFs
-                    </h2>
-                    <div className="space-y-4">
-                        {pdfs.length === 0 ? <p className="text-zinc-500">No PDFs available.</p> : pdfs.map(pdf => (
-                            <Card key={pdf.id} className="bg-zinc-900/40 border-zinc-800/50 backdrop-blur-md hover:bg-zinc-800/40 transition-colors">
-                                <CardContent className="p-4 flex items-center justify-between">
-                                    <div>
-                                        <p className="font-semibold text-zinc-100 mb-1 flex items-center gap-2">
-                                            <FileText className="w-4 h-4 text-rose-400" /> {pdf.fileUrl.split('/').pop()?.split('-').slice(1).join('-') || 'Document'}
-                                        </p>
-                                        <p className="text-xs text-zinc-400">By {pdf.teacher.name} • {new Date(pdf.createdAt).toLocaleDateString()}</p>
-                                    </div>
-                                    <a href={pdf.fileUrl} target="_blank" rel="noreferrer" className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-zinc-300 hover:text-white transition-colors">
-                                        <Download className="w-5 h-5" />
-                                    </a>
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </div>
-                </div>
-            </div>
-
-            <Dialog open={summaryState.isOpen} onOpenChange={(open) => setSummaryState(prev => ({ ...prev, isOpen: open }))}>
-                <DialogContent className="max-w-2xl bg-zinc-950 border-zinc-800 text-zinc-100 max-h-[80vh] overflow-y-auto custom-scrollbar">
-                    <DialogHeader>
-                        <DialogTitle>AI Summary: {summaryState.title}</DialogTitle>
-                    </DialogHeader>
-                    <div className="prose prose-invert prose-sm text-zinc-300">
-                        <ReactMarkdown>{summaryState.content}</ReactMarkdown>
-                    </div>
-                </DialogContent>
-            </Dialog>
-        </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <LoadingSkeleton lines={4} className="min-h-72" />
+        <LoadingSkeleton lines={4} className="min-h-72" />
+      </div>
     );
+  }
+
+  if (notesQuery.error || pdfsQuery.error) {
+    return <ErrorState onRetry={() => { void notesQuery.refetch(); void pdfsQuery.refetch(); }} />;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-semibold text-slate-950 dark:text-white">Class content</h1>
+        <p className="mt-2 text-slate-600 dark:text-slate-300">
+          Explore uploaded notes and PDFs, then turn them into AI summaries and quiz yourself right away.
+        </p>
+      </div>
+
+      <Card className="glass-card rounded-[2rem]">
+        <CardHeader>
+          <CardTitle>PDF Summarize & Remember</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-[1.5rem] bg-slate-50 p-5 dark:bg-white/5">
+            <p className="text-lg font-semibold text-slate-900 dark:text-slate-50">How this works</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              {[
+                '1. Open any note or PDF and generate an AI summary.',
+                '2. Revisit the summary in the remember section below.',
+                '3. Launch a quiz game from that summary to lock it in.',
+              ].map((item) => (
+                <div key={item} className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-600 shadow-sm dark:bg-slate-950/60 dark:text-slate-300">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[1.5rem] bg-slate-50 p-5 dark:bg-white/5">
+            <p className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-50">
+              <BrainCircuit className="size-5 text-indigo-500" />
+              Remember section
+            </p>
+            <div className="mt-4 space-y-3">
+              {(dashboardQuery.data?.recentSummaries || []).slice(0, 3).map((summary) => (
+                <div key={summary.id} className="rounded-2xl bg-white px-4 py-3 shadow-sm dark:bg-slate-950/60">
+                  <p className="font-medium text-slate-900 dark:text-slate-50">{summary.title}</p>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{summary.content}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Card className="glass-card rounded-[2rem]">
+          <CardHeader>
+            <CardTitle>Uploaded notes</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {notesQuery.data?.map((note) => (
+              <div key={note.id} className="rounded-[1.5rem] border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/60">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-lg font-semibold text-slate-900 dark:text-slate-50">{note.title}</p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      {note.teacher.name} • {new Date(note.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  {note.fileUrl ? (
+                    <a href={note.fileUrl} target="_blank" rel="noreferrer" className="rounded-full border border-slate-200 p-2 dark:border-white/10">
+                      <Download className="size-4" />
+                    </a>
+                  ) : null}
+                </div>
+                <div className="prose prose-sm mt-4 line-clamp-4 max-w-none dark:prose-invert">
+                  <ReactMarkdown>{note.content}</ReactMarkdown>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <CtaButton
+                    type="button"
+                    className="h-11 px-5"
+                    onClick={() => summarize.mutate(note)}
+                    disabled={summarize.isPending}
+                  >
+                    {summarize.isPending && summarize.variables?.id === note.id ? <Loader2 className="size-4 animate-spin" /> : <BookOpen className="size-4" />}
+                    Summarize
+                  </CtaButton>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card rounded-[2rem]">
+          <CardHeader>
+            <CardTitle>PDF resources</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {pdfsQuery.data?.map((pdf) => (
+              <div key={pdf.id} className="rounded-[1.5rem] border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/60">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-50">
+                      <FileText className="size-4 text-rose-500" />
+                      {pdf.fileUrl.split('/').pop() || 'PDF resource'}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      {pdf.teacher.name} • {new Date(pdf.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <a href={pdf.fileUrl} target="_blank" rel="noreferrer" className="rounded-full border border-slate-200 p-2 dark:border-white/10">
+                    <Download className="size-4" />
+                  </a>
+                </div>
+                <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                  {pdf.summary || 'Ready to summarize with AI after review.'}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <CtaButton
+                    type="button"
+                    className="h-11 px-5"
+                    onClick={() =>
+                      summarize.mutate({
+                        id: pdf.id,
+                        title: pdf.fileUrl.split('/').pop() || 'PDF resource',
+                        content: pdf.summary || 'Summarize this PDF for study revision.',
+                        teacher: pdf.teacher,
+                        createdAt: pdf.createdAt,
+                        classroomId: 'class-physics',
+                      })
+                    }
+                    disabled={summarize.isPending}
+                  >
+                    {summarize.isPending && summarize.variables?.id === pdf.id ? <Loader2 className="size-4 animate-spin" /> : <BookOpen className="size-4" />}
+                    Summarize PDF
+                  </CtaButton>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Dialog open={summaryState.open} onOpenChange={(open) => setSummaryState((prev) => ({ ...prev, open }))}>
+        <DialogContent aria-label="AI summary" className="max-w-3xl rounded-[2rem] border-white/20 bg-white/95 dark:border-white/10 dark:bg-slate-950">
+          <DialogHeader>
+            <DialogTitle>{summaryState.title}</DialogTitle>
+          </DialogHeader>
+          <div className="pretty-scrollbar max-h-[60vh] overflow-y-auto pr-2">
+            <div className="prose prose-sm max-w-none dark:prose-invert">
+              <ReactMarkdown>{summaryState.content}</ReactMarkdown>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <CtaButton type="button" className="h-11 px-5" onClick={() => quiz.mutate(summaryState.content)} disabled={quiz.isPending}>
+              {quiz.isPending ? <Loader2 className="size-4 animate-spin" /> : <BookOpen className="size-4" />}
+              Generate Quiz
+            </CtaButton>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={quizState.open} onOpenChange={(open) => setQuizState((prev) => ({ ...prev, open }))}>
+        <DialogContent aria-label="Summary quiz" className="max-w-2xl rounded-[2rem] border-white/20 bg-white/95 dark:border-white/10 dark:bg-slate-950">
+          <DialogHeader>
+            <DialogTitle>AI Quiz Generator</DialogTitle>
+          </DialogHeader>
+          {currentQuestion ? (
+            <div className="space-y-5">
+              <div className="rounded-[1.5rem] bg-slate-50 p-5 dark:bg-white/5">
+                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                  Question {quizState.currentIndex + 1} of {quizState.questions.length}
+                </p>
+                <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-50">
+                  {currentQuestion.question}
+                </p>
+              </div>
+              <div className="grid gap-3">
+                {currentQuestion.options.map((option) => (
+                  <Button
+                    key={option}
+                    type="button"
+                    variant="outline"
+                    className="h-auto justify-start rounded-2xl px-4 py-3 text-left"
+                    onClick={async () => {
+                      const nextAnswers = [...quizState.answers];
+                      nextAnswers[quizState.currentIndex] = option;
+                      const nextIndex = quizState.currentIndex + 1;
+                      if (nextIndex < quizState.questions.length) {
+                        setQuizState((prev) => ({ ...prev, answers: nextAnswers, currentIndex: nextIndex }));
+                        return;
+                      }
+
+                      const nextScore = quizState.questions.reduce((total, question, index) => {
+                        const chosen = index === quizState.currentIndex ? option : nextAnswers[index];
+                        return total + (chosen === question.answer ? 1 : 0);
+                      }, 0);
+
+                      await fetchJson<{ success: boolean }>('/api/quiz', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          summaryId: summaryState.id,
+                          score: nextScore,
+                          total: quizState.questions.length,
+                        }),
+                      });
+                      posthog?.capture('quiz_completion', { score: nextScore, total: quizState.questions.length });
+                      setQuizState((prev) => ({ ...prev, answers: nextAnswers, currentIndex: nextIndex }));
+                    }}
+                  >
+                    {option}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-slate-50 p-6 text-center dark:bg-white/5">
+              <p className="text-3xl font-semibold text-slate-900 dark:text-slate-50">
+                {score} / {quizState.questions.length}
+              </p>
+              <p className="mt-2 text-slate-600 dark:text-slate-300">Quiz complete. Nice work.</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }

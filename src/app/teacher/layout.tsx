@@ -1,62 +1,24 @@
 'use client';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { Home, Users, UploadCloud, LogOut, CheckSquare } from 'lucide-react';
-import { toast } from 'sonner';
+
+import { ClipboardList, Home, NotebookPen, UploadCloud, Users } from 'lucide-react';
+import { DashboardNav } from '@/components/dashboard-nav';
+import { PageShell } from '@/components/page-shell';
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {
-    const pathname = usePathname();
-    const router = useRouter();
-
-    const tabs = [
-        { name: 'Dashboard', href: '/teacher', icon: Home },
-        { name: 'Attendance', href: '/teacher/attendance', icon: Users },
-        { name: 'Upload Content', href: '/teacher/content', icon: UploadCloud },
-    ];
-
-    async function handleLogout() {
-        const response = await fetch('/api/auth/logout', { method: 'POST' });
-        // #region agent log
-        fetch('http://127.0.0.1:7481/ingest/a62793e9-faf6-4aa5-8fae-f241bfabcb8d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d74878'},body:JSON.stringify({sessionId:'d74878',runId:'baseline',hypothesisId:'H5',location:'src/app/teacher/layout.tsx:20',message:'Teacher logout response status',data:{ok:response.ok,status:response.status},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-        if (!response.ok) {
-            toast.error("Logout failed");
-            return;
-        }
-        toast.success("Logged out");
-        router.push('/');
-    }
-
-    return (
-        <div className="flex h-screen bg-zinc-950 text-zinc-100">
-            {/* Sidebar */}
-            <aside className="w-64 border-r border-zinc-800 bg-zinc-900/50 flex flex-col backdrop-blur-xl">
-                <div className="p-6 flex items-center gap-2 border-b border-zinc-800">
-                    <CheckSquare className="w-8 h-8 text-fuchsia-400" />
-                    <span className="font-bold text-lg text-white tracking-tight">Teacher Portal</span>
-                </div>
-                <nav className="flex-1 p-4 space-y-2">
-                    {tabs.map((tab) => {
-                        const active = pathname === tab.href;
-                        return (
-                            <Link key={tab.href} href={tab.href} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${active ? 'bg-fuchsia-600/10 text-fuchsia-400 border border-fuchsia-500/20 shadow-sm' : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50'}`}>
-                                <tab.icon className="w-5 h-5" />
-                                <span className="font-medium">{tab.name}</span>
-                            </Link>
-                        );
-                    })}
-                </nav>
-                <div className="p-4 border-t border-zinc-800">
-                    <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-3 w-full text-left text-red-400 hover:bg-red-500/10 rounded-xl transition-all font-medium">
-                        <LogOut className="w-5 h-5" />
-                        Log out
-                    </button>
-                </div>
-            </aside>
-            <main className="flex-1 overflow-y-auto relative">
-                <div className="absolute top-[-20%] right-[20%] w-[40rem] h-[40rem] bg-fuchsia-600/5 blur-[120px] rounded-full pointer-events-none" />
-                {children}
-            </main>
-        </div>
-    );
+  return (
+    <PageShell>
+      <DashboardNav
+        title="Teacher Workspace"
+        items={[
+          { label: 'Dashboard', href: '/teacher', icon: Home },
+          { label: 'Attendance', href: '/teacher/attendance', icon: Users },
+          { label: 'Content', href: '/teacher/content', icon: UploadCloud },
+          { label: 'Assignments', href: '/teacher/assignments', icon: ClipboardList },
+          { label: 'Shared Notes', href: '/teacher/shared-notes', icon: NotebookPen },
+        ]}
+      >
+        {children}
+      </DashboardNav>
+    </PageShell>
+  );
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { setCookieSession } from '@/lib/auth';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
-import { adminDb } from '@/lib/firebase-admin';
+import { ensureUserDocument } from '@/lib/firebase/admin-services';
 
 const JWKS = createRemoteJWKSet(new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'));
 
@@ -33,25 +33,12 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Invalid token payload' }, { status: 400 });
         }
 
-        // Use Admin SDK to manage user in Firestore
-        const userRef = adminDb.collection('users').doc(uid);
-        const userDoc = await userRef.get();
-        
-        let finalRole = role;
-        if (userDoc.exists) {
-            // Persist the existing role
-            finalRole = userDoc.data()?.role || role;
-        } else {
-            // New user signup
-            await userRef.set({
-                name,
-                email,
-                role,
-                createdAt: new Date()
-            });
-        }
-
-        const userData = { id: uid, name, email, role: finalRole };
+        const userData = await ensureUserDocument({
+            uid,
+            name,
+            email,
+            role,
+        });
 
         // Set the session cookie
         await setCookieSession(userData.id, userData.role);

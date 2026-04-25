@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
-import { adminDb, adminStorage } from '@/lib/firebase-admin';
+import { adminDb } from '@/lib/firebase-admin';
+import { recordTeacherUpload } from '@/lib/firebase/admin-services';
 
 export async function POST(req: Request) {
     try {
@@ -54,6 +55,8 @@ export async function POST(req: Request) {
             summary: textContent ? textContent.slice(0, 1000) : 'No summary available.',
             createdAt: new Date()
         });
+
+        await recordTeacherUpload(session.userId, file.name);
 
         return NextResponse.json({ 
             success: true, 

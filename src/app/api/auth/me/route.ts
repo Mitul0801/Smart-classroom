@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { adminDb } from '@/lib/firebase-admin';
+import { getUserDocument } from '@/lib/firebase/admin-services';
 
 export async function GET() {
     try {
@@ -9,13 +9,7 @@ export async function GET() {
             return NextResponse.json({ authenticated: false }, { status: 401 });
         }
 
-        const userDoc = await adminDb.collection('users').doc(session.userId).get();
-
-        if (!userDoc.exists) {
-            return NextResponse.json({ authenticated: false }, { status: 401 });
-        }
-
-        const userData = { id: userDoc.id, ...userDoc.data() };
+        const userData = await getUserDocument(session.userId);
 
         return NextResponse.json({ authenticated: true, user: userData }, { status: 200 });
     } catch (error) {

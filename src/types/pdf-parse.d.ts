@@ -1,9 +1,17 @@
 declare module 'pdf-parse/lib/pdf-parse.js' {
-  const pdfParse: (dataBuffer: Buffer, options?: any) => Promise<{
+  interface PdfInfo {
+    [key: string]: unknown;
+  }
+
+  interface PdfMetadata {
+    [key: string]: unknown;
+  }
+
+  const pdfParse: (dataBuffer: Buffer, options?: Record<string, unknown>) => Promise<{
     numpages: number;
     numrender: number;
-    info: any;
-    metadata: any;
+    info: PdfInfo;
+    metadata: PdfMetadata;
     text: string;
     version: string;
   }>;

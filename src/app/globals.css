@@ -126,6 +126,47 @@
     @apply bg-background text-foreground;
   }
   html {
-    @apply font-sans;
+    @apply font-sans scroll-smooth;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, oklch(0.62 0.24 280) 24%, transparent);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply tracking-tight;
+  }
+
+  button,
+  a,
+  input,
+  textarea {
+    @apply outline-none;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply border border-white/40 bg-white/70 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-white/5;
+  }
+
+  .section-shell {
+    @apply mx-auto max-w-7xl px-4 sm:px-6;
+  }
+
+  .page-grid {
+    @apply grid gap-6 lg:grid-cols-12;
+  }
+
+  .pretty-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .pretty-scrollbar::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-slate-300 dark:bg-slate-700;
   }
 }
