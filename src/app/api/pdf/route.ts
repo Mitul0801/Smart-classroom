@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 import { getSession } from '@/lib/auth';
 import { adminDb } from '@/lib/firebase-admin';
 
@@ -16,8 +17,14 @@ export async function GET() {
         }));
 
         return NextResponse.json({ data: pdfs }, { status: 200 });
-    } catch (error) {
-        console.error('PDF Fetch Error:', error);
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    } catch (error: any) {
+        console.error('PDF Fetch Error:', {
+            message: error?.message,
+            stack: error?.stack
+        });
+        return NextResponse.json({ 
+            error: 'Failed to list PDFs', 
+            details: error?.message || 'Unknown error' 
+        }, { status: 500 });
     }
 }

@@ -51,20 +51,28 @@ export default function TeacherContentPage() {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch('/api/pdf/upload', {
-      method: 'POST',
-      body: formData,
-    });
+    try {
+      const response = await fetch('/api/pdf/upload', {
+        method: 'POST',
+        body: formData,
+      });
 
-    setLoadingPdf(false);
-    if (!response.ok) {
-      toast.error('Failed to upload PDF');
-      return;
+      setLoadingPdf(false);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('PDF Upload Error Details:', errorData);
+        toast.error(errorData.details || errorData.error || 'Failed to upload PDF');
+        return;
+      }
+
+      posthog?.capture('pdf_upload', { type: 'pdf' });
+      toast.success('PDF uploaded');
+      form.reset();
+    } catch (error: any) {
+      console.error('PDF Upload Network Error:', error);
+      setLoadingPdf(false);
+      toast.error('Network error occurred while uploading PDF');
     }
-
-    posthog?.capture('pdf_upload', { type: 'pdf' });
-    toast.success('PDF uploaded');
-    form.reset();
   }
 
   return (

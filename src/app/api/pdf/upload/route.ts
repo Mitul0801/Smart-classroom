@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
-import { adminDb } from '@/lib/firebase-admin';
+import { adminDb, adminStorage } from '@/lib/firebase-admin';
 import { recordTeacherUpload } from '@/lib/firebase/admin-services';
+import { getDownloadURL } from 'firebase-admin/storage';
 
 export async function POST(req: Request) {
     try {
@@ -21,28 +22,31 @@ export async function POST(req: Request) {
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
+        // 1. Extract text for AI features
         let textContent = '';
         try {
             const result = await pdfParse(buffer);
             textContent = result.text;
         } catch (e) {
-            console.warn('PDF parsing skipped or failed:', e);
+            console.warn('PDF parsing failed, continuing with empty text:', e);
         }
 
-        // Save locally to bypass Firebase Storage limitations
-        const fs = await import('fs/promises');
-        const path = await import('path');
-        
-        const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-        await fs.mkdir(uploadsDir, { recursive: true });
-        
+        // 2. Upload to Firebase Storage
+        const bucket = adminStorage.bucket();
         const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const fileName = `${Date.now()}-${safeName}`;
-        const filePath = path.join(uploadsDir, fileName);
-        
-        await fs.writeFile(filePath, buffer);
-        const fileUrl = `/uploads/${fileName}`;
+        const fileName = `uploads/${Date.now()}-${safeName}`;
+        const fileRef = bucket.file(fileName);
 
+        await fileRef.save(buffer, {
+            metadata: {
+                contentType: 'application/pdf',
+            }
+        });
+
+        // 3. Get Download URL
+        const fileUrl = await getDownloadURL(fileRef);
+
+        // 4. Save metadata to Firestore
         const teacherDoc = await adminDb.collection('users').doc(session.userId).get();
         const teacherData = teacherDoc.exists ? teacherDoc.data() : { name: 'Unknown Teacher' };
 
@@ -52,10 +56,12 @@ export async function POST(req: Request) {
                 name: teacherData?.name || 'Unknown Teacher'
             },
             fileUrl: fileUrl,
+            fileName: file.name,
             summary: textContent ? textContent.slice(0, 1000) : 'No summary available.',
             createdAt: new Date()
         });
 
+        // 5. Record the activity
         await recordTeacherUpload(session.userId, file.name);
 
         return NextResponse.json({ 
@@ -63,8 +69,16 @@ export async function POST(req: Request) {
             data: { id: pdfRef.id, fileUrl }, 
             extractedText: textContent 
         }, { status: 201 });
-    } catch (error) {
-        console.error('PDF Upload Error:', error);
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+
+    } catch (error: any) {
+        console.error('PDF Upload Error Details:', {
+            message: error?.message,
+            code: error?.code,
+            stack: error?.stack
+        });
+        return NextResponse.json({ 
+            error: 'Failed to upload PDF', 
+            details: error?.message || 'Unknown error'
+        }, { status: 500 });
     }
 }
